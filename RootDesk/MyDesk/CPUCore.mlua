@@ -959,6 +959,13 @@ script CPUCore extends Component
 			local val = self.Reg[sregNames[sreg + 1]]
 			if mod == 3 then self:SetReg16ByIndex(rm, val) else self:WriteRM16(mod, rm, val) end
 			
+		elseif opcode == 0x8D then -- LEA r16, m
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local offset = self:CalculateOffset(mod, rm)
+			self:SetRegister16(reg, offset)
+			self.segmentOverride = nil
+
 		elseif opcode == 0x8E then -- MOV Sreg, r/m16
 			local modrm = self:FetchByte()
 			local mod, sreg, rm = self:DecodeModRM(modrm)
@@ -2152,16 +2159,13 @@ script CPUCore extends Component
 		self:WriteByte(0x46D, math.floor(count / 256))
 		-- log("CPU: Timer Tick " .. count)
 	end
-	method number CalculateAddress(number mod, number rm)
+	method number CalculateOffset(number mod, number rm)
 		local offset = 0
 		local base = 0
 		
 		-- 1. Mod 0, RM 6은 특수 케이스: [disp16] (직접 주소)
 		if mod == 0 and rm == 6 then
-			offset = self:FetchWord()
-			local segment = self.segmentOverride or self.Reg.DS
-			self.segmentOverride = nil
-			return ((segment << 4) + offset) & 0xFFFFF
+			return self:FetchWord()
 		end
 		
 		-- 2. Displacement(변위) 읽기
@@ -2185,17 +2189,23 @@ script CPUCore extends Component
 		elseif rm == 7 then base = self.Reg.BX
 		end
 		
+		return (base + disp) & 0xFFFF
+	end
+	
+	method number CalculateAddress(number mod, number rm)
+		local offset = self:CalculateOffset(mod, rm)
+		
 		-- 4. 세그먼트 결정 (BP가 포함되면 SS, 아니면 DS가 기본)
 		local segment = self.Reg.DS
 		if self.segmentOverride ~= nil then
 			segment = self.segmentOverride
 			self.segmentOverride = nil
-		elseif rm == 2 or rm == 3 or rm == 6 then
+		elseif (mod ~= 0 or rm ~= 6) and (rm == 2 or rm == 3 or rm == 6) then
 			segment = self.Reg.SS
 		end
 		
 		-- 최종 물리 주소 (20비트)
-		return ((segment << 4) + base + disp) & 0xFFFFF
+		return ((segment << 4) + offset) & 0xFFFFF
 	end
 	@EventSender("Service", "InputService")
 	handler HandleKeyDownEvent(KeyDownEvent event)
