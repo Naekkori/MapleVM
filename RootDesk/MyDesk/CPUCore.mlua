@@ -285,8 +285,12 @@ script CPUCore extends Component
 		local es = self.Reg.ES
 		local bx = self.Reg.BX
 		
+		-- 10비트 실린더 번호 계산 (CH: bits 0-7, CL bits 6-7: bits 8-9)
+		local cylinder = ch | ((cl & 0xC0) << 2)
+		local sector = cl & 0x3F
+		
 		if ah == 0x02 then -- Read Sectors
-			local success = self.FDD.FloppyDrive:ReadSectors(ch, dh, cl & 0x3F, al, es, bx)
+			local success = self.FDD.FloppyDrive:ReadSectors(cylinder, dh, sector, al, es, bx)
 			
 			if success then
 				self.Reg.Flags = self.Reg.Flags & (~1)
@@ -306,6 +310,10 @@ script CPUCore extends Component
 			self.Reg.ES = 0xF000
 			self.Reg.DI = 0x0080 -- DPT 주소 (MapleVMBIOS에서 설정한 위치)
 			log("BIOS: INT 13h Get Drive Parameters (1.44MB Floppy)")
+		else
+			log_warning(string.format("BIOS: INT 13h Unsupported Function AH=%02Xh", ah))
+			self.Reg.Flags = self.Reg.Flags | 1 -- CF = 1 (Error)
+			self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (Invalid Function)
 		end
 	end
 	
@@ -313,14 +321,24 @@ script CPUCore extends Component
 		local ah = (self.Reg.AX >> 8) & 0xFF
 		
 		if ah == 0x01 then -- 키 상태 확인 (ZF 설정)
-			self:UpdateFlags(self.lastKeycode, "LOGIC") -- ZF 반영
-			self.Reg.AX = (self.Reg.AX & 0xFF00) | (self.lastKeycode & 0xFF)
+			if self.lastKeycode == 0 then
+				self.Reg.Flags = self.Reg.Flags | 0x0040 -- ZF = 1 (No key)
+			else
+				self.Reg.Flags = self.Reg.Flags & ~0x0040 -- ZF = 0 (Key available)
+				self.Reg.AX = (self.Reg.AX & 0xFF00) | (self.lastKeycode & 0xFF)
+			end
 			
 		elseif ah == 0x00 then -- 키 읽기
+			if self.lastKeycode == 0 then
+				-- 키가 없으면 현재 명령어를 다시 실행하도록 IP를 되돌림 (Blocking 에뮬레이션)
+				self.Reg.IP = (self.Reg.IP - 2) & 0xFFFF
+				return
+			end
 			local al = self.lastKeycode
 			self.Reg.AX = (self.Reg.AX & 0xFF00) | (al & 0xFF)
 			self.lastKeycode = 0 -- 읽은 후 버퍼 비움
-			self:UpdateFlags(al, "LOGIC")
+			-- 키를 읽었으므로 ZF는 의미 없지만 일단 클리어
+			self.Reg.Flags = self.Reg.Flags & ~0x0040
 		end
 	end
 	
@@ -913,7 +931,8 @@ script CPUCore extends Component
 				end
 				self:UpdateFlags(res, "LOGIC")
 			elseif reg_op == 7 then -- CMP
-				self:UpdateFlags(val - imm, "CMP")
+				local result = (val - imm) & 0xFFFF
+				self:SetFlagsSub16(val, imm, result)
 			end
 		elseif opcode == 0x84 then -- TEST r/m8, r8
 			local modrm = self:FetchByte()
@@ -934,6 +953,28 @@ script CPUCore extends Component
 			local dest = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
 			local result = (dest & src) & 0xFFFF
 			self:UpdateFlags(result, "LOGIC")
+			
+		elseif opcode == 0x86 then -- XCHG r/m8, r8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local val1 = self:GetReg8ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local val2 = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			
+			self:SetReg8ByIndex(reg, val2)
+			if mod == 3 then self:SetReg8ByIndex(rm, val1) else self:WriteByte(addr, val1) end
+			
+		elseif opcode == 0x87 then -- XCHG r/m16, r16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local val1 = self:GetReg16ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local val2 = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
+			
+			self:SetReg16ByIndex(reg, val2)
+			if mod == 3 then self:SetReg16ByIndex(rm, val1) else self:WriteWord(addr, val1) end
 			
 		elseif opcode == 0x88 then -- MOV r/m8, r8
 			local modrm = self:FetchByte()
@@ -1078,6 +1119,11 @@ script CPUCore extends Component
 			self.Reg.SI = (self.Reg.SI + delta) & 0xFFFF
 			self.Reg.DI = (self.Reg.DI + delta) & 0xFFFF
 			
+		elseif opcode == 0xA8 then -- TEST AL, imm8
+			local imm = self:FetchByte()
+			local res = (self.Reg.AX & 0xFF) & imm
+			self:UpdateFlags(res, "LOGIC8")
+
 		elseif opcode == 0xAA then -- STOSB
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
@@ -1102,36 +1148,6 @@ script CPUCore extends Component
 			self.Reg.AX = self:ReadWord(src)
 			self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
 			
-		elseif opcode == 0xA8 then -- TEST AL, imm8
-			local seg = self.segmentOverride or self.Reg.DS
-			local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
-			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-			self:WriteWord(dst, self:ReadWord(src))
-			local inc = ((self.Reg.Flags & 0x0400) == 0) and 2 or -2
-			self.Reg.SI = (self.Reg.SI + inc) & 0xFFFF
-			self.Reg.DI = (self.Reg.DI + inc) & 0xFFFF
-		elseif opcode == 0xAA then -- STOSB
-			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-			self:WriteByte(dst, self.Reg.AX & 0xFF)
-			local inc = ((self.Reg.Flags & 0x0400) == 0) and 1 or -1
-			self.Reg.DI = (self.Reg.DI + inc) & 0xFFFF
-		elseif opcode == 0xAB then -- STOSW
-			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-			self:WriteWord(dst, self.Reg.AX)
-			local inc = ((self.Reg.Flags & 0x0400) == 0) and 2 or -2
-			self.Reg.DI = (self.Reg.DI + inc) & 0xFFFF
-		elseif opcode == 0xAC then -- LODSB
-			local seg = self.segmentOverride or self.Reg.DS
-			local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
-			self.Reg.AX = (self.Reg.AX & 0xFF00) | self:ReadByte(src)
-			local inc = ((self.Reg.Flags & 0x0400) == 0) and 1 or -1
-			self.Reg.SI = (self.Reg.SI + inc) & 0xFFFF
-		elseif opcode == 0xAD then -- LODSW
-			local seg = self.segmentOverride or self.Reg.DS
-			local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
-			self.Reg.AX = self:ReadWord(src)
-			local inc = ((self.Reg.Flags & 0x0400) == 0) and 2 or -2
-			self.Reg.SI = (self.Reg.SI + inc) & 0xFFFF
 		elseif opcode == 0xB0 then self.Reg.AX = (self.Reg.AX & 0xFF00) | self:FetchByte() -- AL
 		elseif opcode == 0xB1 then self.Reg.CX = (self.Reg.CX & 0xFF00) | self:FetchByte() -- CL
 		elseif opcode == 0xB2 then self.Reg.DX = (self.Reg.DX & 0xFF00) | self:FetchByte() -- DL
@@ -1164,6 +1180,18 @@ script CPUCore extends Component
 		elseif opcode == 0xCB then -- RET Far
 			self.Reg.IP = self:PopStack()
 			self.Reg.CS = self:PopStack()
+			
+		elseif opcode == 0xC4 then -- LES r16, m16:16
+			local modrm = self:FetchByte()
+			local reg = (modrm >> 3) & 7
+			local addr = self:CalculateModRM(modrm)
+			
+			local offset = self:ReadWord(addr)
+			local segment = self:ReadWord(addr + 2)
+			
+			self:SetRegister16(reg, offset)
+			self.Reg.ES = segment
+			-- log(string.format("LES: Set Reg[%d]=%04X, ES=%04X", reg, offset, segment))
 			
 		elseif opcode == 0xC5 then -- LDS r16, m16:16
 			local modrm = self:FetchByte()
@@ -1811,8 +1839,8 @@ script CPUCore extends Component
 		elseif port == 0x3D4 or port == 0x3D5 then
 			if self.VGA then self.VGA.GraphicsCard:OnWritePort(port, val) end
 			
-			-- 3. PIC (0x20, 0x21)
-		elseif port == 0x20 or port == 0x21 then
+			-- 3. PIC (0x20, 0x21, 0xA0, 0xA1)
+		elseif port == 0x20 or port == 0x21 or port == 0xA0 or port == 0xA1 then
 			if self.PIC then
 				self.PIC.PIC8259:Write(port, val)
 			end
@@ -1934,18 +1962,24 @@ script CPUCore extends Component
 	end
 	
 	method void SetFlagsSub16(number dest, number src, number result)
-		-- NaN/Inf/nil 완전 방어 세탁
-		local function v(n) return (n == n and n ~= math.huge and n ~= -math.huge) and math.floor(n) or 0 end
-		local d, s, r = v(dest) % 0x10000, v(src) % 0x10000, v(result) % 0x10000
-		local f = v(self.Reg.Flags) % 0x10000
+		local function v(n) return math.floor(n or 0) end
+		local d = v(dest) % 0x10000
+		local s = v(src) % 0x10000
+		local r = v(result) % 0x10000
+		local f = v(self.Reg.Flags) & 0xF72A
 		
-		self.Reg.Flags = f & 0xF72A
-		if r == 0 then self.Reg.Flags = self.Reg.Flags | 0x0040 end
-		if (r & 0x8000) ~= 0 then self.Reg.Flags = self.Reg.Flags | 0x0080 end
-		if d < s then self.Reg.Flags = self.Reg.Flags | 0x0001 end
+		-- ZF (Zero Flag)
+		if r == 0 then f = f | 0x0040 end
+		-- SF (Sign Flag)
+		if (r & 0x8000) ~= 0 then f = f | 0x0080 end
+		-- CF (Carry Flag): 뺄셈에서는 dest < src 일 때 발생 (Borrow)
+		if d < s then f = f | 0x0001 end
+		-- OF (Overflow Flag): (d_msb != s_msb) && (d_msb != r_msb)
 		if ((d ~ s) & 0x8000) ~= 0 and ((d ~ r) & 0x8000) ~= 0 then
-			self.Reg.Flags = self.Reg.Flags | 0x0800
+			f = f | 0x0800
 		end
+		
+		self.Reg.Flags = f
 	end
 	
 	method void SetFlagsAdd8(number dest, number src, number result)
@@ -2026,10 +2060,11 @@ script CPUCore extends Component
 		end
 		
 		self.TimerAccumulator = (self.TimerAccumulator or 0) + dt
-		if self.TimerAccumulator >= 0.0549 then
-			-- log("DEBUG: Raising IRQ 0 (Timer)")
+		-- 54.925ms 마다 발생하는 PC 타이머 인터럽트 재현 (약 18.2Hz)
+		-- while 루프를 사용하여 프레임 드랍 시에도 타이머 틱이 유실되지 않도록 함
+		while self.TimerAccumulator >= 0.054925 do
 			self:RaiseHardwareInterrupt(0)
-			self.TimerAccumulator = 0
+			self.TimerAccumulator = self.TimerAccumulator - 0.054925
 		end
 		self:ExecuteBatch()
 	end
@@ -2143,29 +2178,31 @@ script CPUCore extends Component
 		result = math.floor(result or 0)
 		local resMasked = result & mask
 		
+		local f = math.floor(self.Reg.Flags or 0)
+		
 		-- Zero Flag (ZF): 결과가 0이면 설정
-		if resMasked == 0 then self.Reg.Flags = (math.floor(self.Reg.Flags or 0) | 0x0040) else self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0040)) end
+		if resMasked == 0 then f = f | 0x0040 else f = f & 0xFFBF end
 		
 		-- Sign Flag (SF): 최상위 비트(MSB)가 1이면 설정
-		if (resMasked & signBit) ~= 0 then self.Reg.Flags = (math.floor(self.Reg.Flags or 0) | 0x0080) else self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0080)) end
+		if (resMasked & signBit) ~= 0 then f = f | 0x0080 else f = f & 0xFF7F end
 		
 		-- Parity Flag (PF): 하위 8비트 중 1의 개수가 짝수면 설정
 		local low8, count = resMasked & 0xFF, 0
 		for i = 0, 7 do if (low8 >> i) & 1 == 1 then count = count + 1 end end
-		if count % 2 == 0 then self.Reg.Flags = (math.floor(self.Reg.Flags or 0) | 0x0004) else self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0004)) end
+		if count % 2 == 0 then f = f | 0x0004 else f = f & 0xFFFB end
 		
 		if opType == "LOGIC" or opType == "LOGIC8" then
-			-- 논리 연산은 CF와 OF를 0으로 만듦
-			self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0801))
+			-- 논리 연산은 CF(bit 0)와 OF(bit 11)를 0으로 만듦
+			f = f & 0xF7FE
 		elseif opType == "ADD" or opType == "ADC" or opType == "ADD8" or opType == "ADC8" then
 			-- Carry Flag (CF): 결과가 비트 범위를 초과하면 설정
-			if result > mask then self.Reg.Flags = (math.floor(self.Reg.Flags or 0) | 0x0001) else self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0001)) end
+			if result > mask then f = f | 0x0001 else f = f & 0xFFFE end
 		elseif opType == "SUB" or opType == "CMP" or opType == "SUB8" or opType == "CMP8" then
 			-- Carry/Borrow Flag (CF): 결과가 0보다 작으면 설정 (Borrow 발생)
-			if result < 0 then self.Reg.Flags = (math.floor(self.Reg.Flags or 0) | 0x0001) else self.Reg.Flags = (math.floor(self.Reg.Flags or 0) & (0xFFFF ~ 0x0001)) end
-		elseif opType == "DEC" or opType == "INC" or opType == "DEC8" or opType == "INC8" then
-			-- INC/DEC는 Carry Flag에 영향을 주지 않음
+			if result < 0 then f = f | 0x0001 else f = f & 0xFFFE end
 		end
+		
+		self.Reg.Flags = f
 	end
 	method void HandleTimerInterrupt()
 		-- BDA (BIOS Data Area)의 0x0040:0x006C 번지 틱 카운터 증가

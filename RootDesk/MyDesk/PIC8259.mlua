@@ -1,106 +1,145 @@
 @Component
 script PIC8259 extends Component
-	
-	-- 8259 PIC 레지스터 및 상태 변수
-	property number IMR = 0xFC   -- Interrupt Mask Register (Timer, Keyboard unmasked)
-	property number IRR = 0      -- Interrupt Request Register
-	property number ISR = 0      -- In-Service Register
-	
-	property number VectorOffset = 0x08 -- 기본값 (ICW2에서 재설정됨)
-	
-	-- 초기화 상태 관리 (ICW1~4)
-	property number InitStep = 0 -- 0: Normal, 1: Wait ICW2, 2: Wait ICW3, 3: Wait ICW4
-	property boolean ExpectICW4 = false
-	
-	-- 포트 쓰기 처리 (0x20, 0x21 등)
+
+	property number MasterIMR = 0xFC
+
+	property number MasterIRR = 0
+
+	property number MasterISR = 0
+
+	property number MasterVectorOffset = 0x08
+
+	property number VectorOffset = 0x08 -- CPUCore 참조용 일반 프로퍼티 추가
+
+	property number SlaveIMR = 0xFF
+
+	property number SlaveIRR = 0
+
+	property number SlaveISR = 0
+
+	property number SlaveVectorOffset = 0x70
+
+	property number MasterInitStep = 0
+
+	property number SlaveInitStep = 0
+
+	property boolean MasterExpectICW4 = false
+
+	property boolean SlaveExpectICW4 = false
+
 	method void Write(number port, number val)
-		if port % 2 == 0 then -- Command Register (0x20, 0xA0)
-			if (val & 0x10) ~= 0 then -- ICW1: 초기화 시작
-				self.InitStep = 1
-				self.IRR = 0
-				self.ISR = 0
-				self.IMR = 0xFF
-				self.ExpectICW4 = (val & 0x01) ~= 0
-				-- log("PIC: Initialization started (ICW1)")
-			elseif (val & 0x08) == 0 and (val & 0x10) == 0 then -- OCW2
-				if (val & 0x20) ~= 0 then -- Non-specific EOI
-					-- ISR에서 우선순위가 가장 높은(가장 낮은 비트) 비트 클리어
-					self:ClearHighestPriorityISR()
-				end
+		if port == 0x20 then -- Master Command
+			if (val & 0x10) ~= 0 then
+				self.MasterInitStep = 1
+				self.MasterIRR = 0
+				self.MasterISR = 0
+				self.MasterIMR = 0xFF
+				self.MasterExpectICW4 = (val & 0x01) ~= 0
+			elseif (val & 0x08) == 0 and (val & 0x10) == 0 then
+				if (val & 0x20) ~= 0 then self:ClearHighestISR(true) end
 			end
-		else -- Data Register (0x21, 0xA1)
-			if self.InitStep == 1 then -- ICW2: Vector Offset 설정
-				self.VectorOffset = val & 0xF8
-				self.InitStep = self.InitStep + 1
-				log("PIC: Vector Offset set to " .. string.format("%02X", self.VectorOffset))
-			elseif self.InitStep == 2 then -- ICW3: Cascade (마스터/슬레이브) 설정
-				-- 단일 PIC 환경에서는 무시하거나 다음 단계로
-				if self.ExpectICW4 then self.InitStep = 3 else self.InitStep = 0 end
-			elseif self.InitStep == 3 then -- ICW4: 추가 설정
-				self.InitStep = 0
-			else -- OCW1: Interrupt Mask Register 설정
-				self.IMR = val
+		elseif port == 0x21 then -- Master Data
+			if self.MasterInitStep == 1 then
+				self.MasterVectorOffset = val & 0xF8
+				self.VectorOffset = self.MasterVectorOffset -- 값 업데이트
+				self.MasterInitStep = 2
+			elseif self.MasterInitStep == 2 then
+				self.MasterInitStep = self.MasterExpectICW4 and 3 or 0
+			elseif self.MasterInitStep == 3 then
+				self.MasterInitStep = 0
+			else
+				self.MasterIMR = val
+			end
+		elseif port == 0xA0 then -- Slave Command
+			if (val & 0x10) ~= 0 then
+				self.SlaveInitStep = 1
+				self.SlaveIRR = 0
+				self.SlaveISR = 0
+				self.SlaveIMR = 0xFF
+				self.SlaveExpectICW4 = (val & 0x01) ~= 0
+			elseif (val & 0x08) == 0 and (val & 0x10) == 0 then
+				if (val & 0x20) ~= 0 then self:ClearHighestISR(false) end
+			end
+		elseif port == 0xA1 then -- Slave Data
+			if self.SlaveInitStep == 1 then
+				self.SlaveVectorOffset = val & 0xF8
+				self.SlaveInitStep = 2
+			elseif self.SlaveInitStep == 2 then
+				self.SlaveInitStep = self.SlaveExpectICW4 and 3 or 0
+			elseif self.SlaveInitStep == 3 then
+				self.SlaveInitStep = 0
+			else
+				self.SlaveIMR = val
 			end
 		end
 	end
-	
-	-- 포트 읽기 처리
+
 	method number Read(number port)
-		if port % 2 == 1 then
-			return self.IMR
+		if port == 0x21 then return self.MasterIMR
+		elseif port == 0xA1 then return self.SlaveIMR
 		end
-		-- 기본적으로 IRR이나 ISR을 읽는 OCW3은 생략 (필요시 구현)
 		return 0
 	end
-	
-	-- 현재 대기 중인 인터럽트 중 가장 우선순위가 높은 것 반환
+
 	method number GetPendingInterrupt()
-		-- 마스킹되지 않은 요청 확인
-		local pending = self.IRR & (~self.IMR)
-		if pending == 0 then return -1 end
-		
-		-- 현재 서비스 중인 인터럽트(ISR)의 최고 우선순위 확인
-		local highestISR = -1
-		for i = 0, 7 do
-			if (self.ISR & (1 << i)) ~= 0 then
-				highestISR = i
-				break
-			end
-		end
-		
-		-- 요청된 IRQ 중 가장 높은 우선순위 찾기
-		for i = 0, 7 do
-			if (pending & (1 << i)) ~= 0 then
-				-- 중첩 인터럽트 규칙: 현재 서비스 중인 것보다 우선순위가 높아야 함 (낮은 인덱스)
-				if highestISR == -1 or i < highestISR then
-					return i
-				else
-					break
+		-- 마스터 확인
+		local pending = self.MasterIRR & (~self.MasterIMR)
+		if pending ~= 0 then
+			for i = 0, 7 do
+				if (pending & (1 << i)) ~= 0 then
+					-- IRQ 2는 슬레이브 케스케이드
+					if i == 2 then
+						local sPending = self.SlaveIRR & (~self.SlaveIMR)
+						if sPending ~= 0 then
+							for j = 0, 7 do
+								if (sPending & (1 << j)) ~= 0 then return j + 8 end
+							end
+						end
+					else
+						return i
+					end
 				end
 			end
 		end
 		return -1
 	end
-	
-	-- 하드웨어 라인에서 IRQ 발생 (CPU -> PIC)
+
 	method void RaiseIRQ(number irq)
-		self.IRR = self.IRR | (1 << (irq & 7))
+		if irq < 8 then
+			self.MasterIRR = self.MasterIRR | (1 << irq)
+		else
+			self.SlaveIRR = self.SlaveIRR | (1 << (irq - 8))
+			self.MasterIRR = self.MasterIRR | (1 << 2) -- 슬레이브 요청 알림
+		end
 	end
-	
-	-- CPU가 인터럽트를 승인함 (INTA)
+
 	method void AcknowledgeInterrupt(number irq)
-		self.IRR = self.IRR & ~(1 << irq)
-		self.ISR = self.ISR | (1 << irq)
+		if irq < 8 then
+			self.MasterIRR = self.MasterIRR & ~(1 << irq)
+			self.MasterISR = self.MasterISR | (1 << irq)
+		else
+			self.SlaveIRR = self.SlaveIRR & ~(1 << (irq - 8))
+			self.SlaveISR = self.SlaveISR | (1 << (irq - 8))
+			self.MasterISR = self.MasterISR | (1 << 2)
+		end
 	end
-	
-	-- EOI 처리: 서비스 중인 가장 높은 우선순위 비트 제거
-	method void ClearHighestPriorityISR()
-		for i = 0, 7 do
-			if (self.ISR & (1 << i)) ~= 0 then
-				self.ISR = self.ISR & ~(1 << i)
-				break
+
+	method void ClearHighestISR(boolean isMaster)
+		if isMaster then
+			for i = 0, 7 do
+				if (self.MasterISR & (1 << i)) ~= 0 then
+					self.MasterISR = self.MasterISR & ~(1 << i)
+					break
+				end
+			end
+		else
+			for i = 0, 7 do
+				if (self.SlaveISR & (1 << i)) ~= 0 then
+					self.SlaveISR = self.SlaveISR & ~(1 << i)
+					break
+				end
 			end
 		end
 	end
-	
+
 end
