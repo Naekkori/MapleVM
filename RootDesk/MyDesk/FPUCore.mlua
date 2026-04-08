@@ -1,0 +1,146 @@
+@Component
+script FPUCore extends Component
+	-- 8개의 부동소수점 레지스터 스택
+	property table Stack = {}
+
+	-- 상태 및 제어 레지스터 (number로 선언 후 비트 연산 시 소수점 제거)
+	property number StatusWord = 0
+	property number ControlWord = 0x037F
+	property number TagWord = 0xFFFF
+
+	-- 스택 포인터 (TOP: 0~7 사이의 값)
+	property number Top = 0
+
+	@ExecSpace("ClientOnly")
+	method void OnInitialize()
+		self:Reset()
+	end
+
+	method void Reset()
+		self.Stack = {0,0,0,0,0,0,0,0}
+		self.StatusWord = 0
+		self.ControlWord = 0x037F
+		self.TagWord = 0xFFFF
+		self.Top = 0
+		self:UpdateStatusWord()
+	end
+
+	-- StatusWord의 TOP 필드 (bits 11-13) 업데이트
+	method void UpdateStatusWord()
+		local t = self.Top or 0
+		local s = self.StatusWord or 0
+		if (t ~= t or s ~= s) or (t == math.huge or s == math.huge) then
+			-- FPU 내부 에러는 로그로 남기고 0으로 복구 시도 (혹은 중단 가능)
+			log_error("[FPU ERROR] Invalid Status/Top state. Resetting to 0.")
+			self.Top = 0
+			self.StatusWord = 0
+			return
+		end
+		local top = math.floor(t) & 7
+		local sw = math.floor(s) & 0xC7FF
+		self.StatusWord = sw | (top << 11)
+	end
+
+	-- ST(i) 레지스터 접근 (현재 Top 기준 상대 위치)
+	method number GetST(number i)
+		local t = self.Top or 0
+		local idx_off = i or 0
+		if (t ~= t or idx_off ~= idx_off) then return 0 end
+		local index = (math.floor(t) + math.floor(idx_off)) % 8
+		return self.Stack[index + 1] or 0
+	end
+
+	method void SetST(number i, number val)
+		local t = self.Top or 0
+		local idx_off = i or 0
+		if (t ~= t or idx_off ~= idx_off) then return end
+		local index = (math.floor(t) + math.floor(idx_off)) % 8
+		self.Stack[index + 1] = val or 0
+	end
+
+	-- 스택 Push (FLD 등)
+	method void Push(number val)
+		local t = self.Top or 0
+		if (t ~= t) then t = 0 end
+		self.Top = (math.floor(t) - 1) & 7
+		self.Stack[self.Top + 1] = val or 0
+		self:UpdateStatusWord()
+	end
+
+	-- 스택 Pop (FSTP 등)
+	method number Pop()
+		local t = self.Top or 0
+		if (t ~= t) then t = 0 end
+		local val = self.Stack[self.Top + 1] or 0
+		self.Top = (math.floor(t) + 1) & 7
+		self:UpdateStatusWord()
+		return val
+	end
+
+	-- 산술 연산
+	method void FADD(number i, number j)
+		self:SetST(i, self:GetST(i) + self:GetST(j))
+	end
+
+	method void FMUL(number i, number j)
+		self:SetST(i, self:GetST(i) * self:GetST(j))
+	end
+
+	method void FSUB(number i, number j)
+		self:SetST(i, self:GetST(i) - self:GetST(j))
+	end
+
+	method void FSUBR(number i, number j)
+		self:SetST(i, self:GetST(j) - self:GetST(i))
+	end
+
+	method void FDIV(number i, number j)
+		local b = self:GetST(j)
+		if b ~= 0 and b == b and b ~= math.huge and b ~= -math.huge then
+			self:SetST(i, self:GetST(i) / b)
+		else
+			self.StatusWord = math.floor(self.StatusWord or 0) | 0x0004 -- Zero Division or Invalid
+		end
+	end
+
+	method void FDIVR(number i, number j)
+		local a = self:GetST(i)
+		if a ~= 0 and a == a and a ~= math.huge and a ~= -math.huge then
+			self:SetST(i, self:GetST(j) / a)
+		else
+			self.StatusWord = math.floor(self.StatusWord or 0) | 0x0004
+		end
+	end
+
+	-- 비교 연산
+	method void FCOM(number i)
+		local a = self:GetST(0)
+		local b = self:GetST(i)
+		
+		local s = self.StatusWord or 0
+		if (s ~= s) then s = 0 end
+		self.StatusWord = math.floor(s) & 0xBAFF
+		
+		if a > b then
+			-- C3, C2, C0 = 0, 0, 0
+		elseif a < b then
+			self.StatusWord = math.floor(self.StatusWord or 0) | 0x0100
+		elseif a == b then
+			self.StatusWord = math.floor(self.StatusWord or 0) | 0x4000
+		else
+			self.StatusWord = math.floor(self.StatusWord or 0) | 0x4500
+		end
+	end
+	
+	method void FLDZ()
+		self:Push(0)
+	end
+	
+	method void FLD1()
+		self:Push(1)
+	end
+	
+	method void FLDPI()
+		self:Push(3.14159265358979)
+	end
+end

@@ -1,0 +1,102 @@
+@Component
+script MapleVMBIOS extends Component
+	
+	property any ROM = {}
+	
+	property Entity CPU = "2a7c0ddd-0a37-497c-8287-634179d981f7"
+	
+	@ExecSpace("ClientOnly")
+	method void OnInitialize()
+		self.ROM = {}
+		
+		local ds = _DataService:GetTable("BiosRom")
+		if ds then
+			for i = 1, ds:GetRowCount() do
+				local startAddr = tonumber(ds:GetCell(i, "Address"), 16) or 0
+				local hexStr = ds:GetCell(i, "Data")
+				
+				if hexStr and hexStr ~= "" then
+					local bytes = {}
+					-- j = j + 2 로 수정하여 정확히 1바이트씩 추출
+					for j = 1, #hexStr , 2 do
+						local byte = tonumber(string.sub(hexStr, j, j + 1), 16)
+						if byte then table.insert(bytes, byte) end
+					end
+					self:LoadBinary(bytes, startAddr)
+				end
+			end
+		end
+		-- IVT (Interrupt Vector Table) 초기화
+		local cpu = self.CPU.CPUCore
+		if cpu then
+			-- 인터럽트 벡터 정의
+			local vectors = {
+				{int = 0x08, ip = 0x0020, cs = 0xF000}, -- 타이머 (bios.asm의 0x0020 위치)
+				{int = 0x09, ip = 0x0024, cs = 0xF000}, -- 키보드 (bios.asm의 0x0024 위치)
+				{int = 0x10, ip = 0x0100, cs = 0xF000}, -- 비디오
+				{int = 0x11, ip = 0x0110, cs = 0xF000}, -- 장비 체크
+				{int = 0x12, ip = 0x0120, cs = 0xF000}, -- 메모리 크기
+				{int = 0x13, ip = 0x0130, cs = 0xF000}, -- 디스크 서비스
+				{int = 0x19, ip = 0x0580, cs = 0xF000}, -- 부팅 인터럽트 (iret 핸들러 위치로 변경)
+				{int = 0x1E, ip = 0x0080, cs = 0xF000}, -- 디스크 파라미터 테이블 (DPT) 포인터 추가
+				{int = 0xF0, ip = 0x0580, cs = 0xF000}, -- 하이퍼바이저 (intF0_handler 위치)
+			}
+			
+			for _, v in ipairs(vectors) do
+				local base = v.int * 4
+				cpu:WriteByte(base, v.ip % 256) -- IP Low
+				cpu:WriteByte(base + 1, math.floor(v.ip / 256)) -- IP High
+				cpu:WriteByte(base + 2, v.cs % 256) -- CS Low
+				cpu:WriteByte(base + 3, math.floor(v.cs / 256)) -- CS High
+				
+				-- 실제 데이터를 읽어서 로그 출력
+				log(string.format("BIOS: IVT INT %02Xh -> %04X:%04X", v.int, v.cs, v.ip))
+			end
+			
+			-- DPT 데이터 작성 (F000:0080 위치에 11바이트 표준 플로피 파라미터)
+			local dptData = {0xAF, 0x02, 0x25, 0x02, 0x12, 0x1B, 0xFF, 0x54, 0xF6, 0x01, 0x08}
+			for i, byte in ipairs(dptData) do
+				cpu:WriteByte(0xF0000 + 0x0080 + i - 1, byte)
+			end
+			log("BIOS: Floppy Diskette Parameter Table (DPT) Initialized at F000:0080")
+			
+			-- BDA (BIOS Data Area) 설정: 기본 메모리 640KB 보고
+			local memSize = 640
+			cpu:WriteByte(0x413, memSize % 256)
+			cpu:WriteByte(0x414, math.floor(memSize / 256))
+			log(string.format("BIOS: BDA Memory Size set to %d KB", memSize))
+			
+			log("BIOS: IVT and BDA Initialization Complete.")
+		end
+		-- 반드시 로딩 후에 부팅 벡터를 마지막으로 덮어씀
+		self:SetupBootVector()
+		log("BIOS: Successfully Initialized.")
+	end
+	
+	method void SetupBootVector()
+		self:WriteROM(0xFFF0, 0xEA)
+		self:WriteROM(0xFFF1, 0x00)
+		self:WriteROM(0xFFF2, 0x00)
+		self:WriteROM(0xFFF3, 0x00)
+		self:WriteROM(0xFFF4, 0xF0)
+	end
+	
+	method void LoadBinary(table data, number startAddr)
+		for i, val in ipairs(data) do
+			self:WriteROM(startAddr + i - 1, val)
+		end
+		-- log("BIOS: Binary Loaded (" .. #data .. " bytes)")
+	end
+	
+	method number ReadROM(number addr)
+		-- log("BIOS Read: " .. string.format("%04X", addr))
+		return self.ROM[addr] or 0
+	end
+	
+	method void WriteROM(number addr, number val)
+		-- ROM 주소 범위를 벗어나지 않도록 (0~0xFFFF)
+		local targetAddr = addr % 0x10000
+		self.ROM[targetAddr] = math.floor(val) % 256
+	end
+	
+end

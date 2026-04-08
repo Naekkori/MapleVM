@@ -1,0 +1,88 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "gamelogic://5ec535fd0efe4862b67d11f389d85429",
+  "ContentType": "x-mod/gamelogic",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.3.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Binary",
+    "Entities": [
+      {
+        "id": "a9e2dbca-1d1d-4047-bd35-1dc24d57ee1f",
+        "path": "/common",
+        "componentNames": "",
+        "jsonString": {
+          "name": "common",
+          "path": "/common",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "/",
+          "revision": 1,
+          "modelId": null,
+          "@components": [],
+          "@version": 1
+        }
+      },
+      {
+        "id": "ad25588b-68fa-440c-9334-575eb19c0cd6",
+        "path": "/common/AboutSoftware",
+        "componentNames": "MOD.Core.TransformComponent,script.About",
+        "jsonString": {
+          "name": "AboutSoftware",
+          "path": "/common/AboutSoftware",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "//",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "ad25588b-68fa-440c-9334-575eb19c0cd6",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.00464859,
+                "y": 0.00261440268,
+                "z": 999.999
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.About",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      }
+    ]
+  }
+}

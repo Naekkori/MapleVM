@@ -1,0 +1,671 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "map://mainprogram",
+  "ContentType": "x-mod/map",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.3.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Binary",
+    "Entities": [
+      {
+        "id": "8da181ce-b0b9-4848-877c-96d7920af9d8",
+        "path": "/maps/mainProgram",
+        "componentNames": "MOD.Core.MapComponent,MOD.Core.FootholdComponent",
+        "jsonString": {
+          "name": "mainProgram",
+          "path": "/maps/mainProgram",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "//",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.MapComponent",
+              "IsInstanceMap": false,
+              "TileMapMode": 0,
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.FootholdComponent",
+              "FootholdsByLayer": {},
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "6456f140-634c-4f67-97cf-e962a211eeea",
+        "path": "/maps/mainProgram/Background",
+        "componentNames": "MOD.Core.BackgroundComponent",
+        "jsonString": {
+          "name": "Background",
+          "path": "/maps/mainProgram/Background",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "///",
+          "revision": 1,
+          "modelId": null,
+          "@components": [
+            {
+              "@type": "MOD.Core.BackgroundComponent",
+              "SolidColor": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
+                "a": 1.0
+              },
+              "TemplateRUID": "794ad8421e2543d8a6d2c70307637450",
+              "Type": 2,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "b7e6c6c6-392f-4c84-ad64-64b364d87f4a",
+        "path": "/maps/mainProgram/MapleMapLayer",
+        "componentNames": "MOD.Core.MapLayerComponent",
+        "jsonString": {
+          "name": "MapleMapLayer",
+          "path": "/maps/mainProgram/MapleMapLayer",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 1,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "maplemaplayer",
+            "sub_entity_id": null,
+            "root_entity_id": null,
+            "replaced_model_id": null
+          },
+          "modelId": "maplemaplayer",
+          "@components": [
+            {
+              "@type": "MOD.Core.MapLayerComponent",
+              "IsVisible": true,
+              "LayerSortOrder": 0,
+              "Locked": false,
+              "MapLayerName": "Layer1",
+              "Thumbnail": "",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "d8250e9d-11c7-401c-9f66-bc76f2a307cd",
+        "path": "/maps/mainProgram/TileMap",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.TileMapComponent",
+        "jsonString": {
+          "name": "TileMap",
+          "path": "/maps/mainProgram/TileMap",
+          "nameEditable": false,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 2,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "tilemap",
+            "sub_entity_id": null,
+            "root_entity_id": null,
+            "replaced_model_id": null
+          },
+          "modelId": "tilemap",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.225,
+                "y": -0.15,
+                "z": 1000.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.TileMapComponent",
+              "IsOddGridPosition": false,
+              "SortingLayer": "MapLayer0",
+              "TileMapVersion": 1,
+              "TileSetRUID": {
+                "DataId": ""
+              },
+              "Tiles": [],
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "cb31103a-f714-48bd-b80a-08b087664831",
+        "path": "/maps/mainProgram/MapleVM",
+        "componentNames": "MOD.Core.TransformComponent,script.Main",
+        "jsonString": {
+          "name": "MapleVM",
+          "path": "/maps/mainProgram/MapleVM",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 3,
+          "pathConstraints": "///",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "cb31103a-f714-48bd-b80a-08b087664831",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0104072569,
+                "y": -0.154968157,
+                "z": 999.999
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.Main",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "6f033c67-5e1a-4e95-a098-72f48567f671",
+        "path": "/maps/mainProgram/MapleVM/VGA",
+        "componentNames": "MOD.Core.TransformComponent,script.GraphicsCard",
+        "jsonString": {
+          "name": "VGA",
+          "path": "/maps/mainProgram/MapleVM/VGA",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "6f033c67-5e1a-4e95-a098-72f48567f671",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.2443,
+                "y": 0.9427,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.GraphicsCard",
+              "Enable": true,
+              "ScreenWidth": 640.0,
+              "ScreenHeight": 480.0
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "2a7c0ddd-0a37-497c-8287-634179d981f7",
+        "path": "/maps/mainProgram/MapleVM/CPU",
+        "componentNames": "MOD.Core.TransformComponent,script.CPUCore",
+        "jsonString": {
+          "name": "CPU",
+          "path": "/maps/mainProgram/MapleVM/CPU",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 1,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "2a7c0ddd-0a37-497c-8287-634179d981f7",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.2443,
+                "y": 0.9427,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.CPUCore",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "d8caf485-fd82-4753-8c1b-179114e47f20",
+        "path": "/maps/mainProgram/MapleVM/Soundchip",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SoundComponent",
+        "jsonString": {
+          "name": "Soundchip",
+          "path": "/maps/mainProgram/MapleVM/Soundchip",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 2,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "d8caf485-fd82-4753-8c1b-179114e47f20",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.1243,
+                "y": 0.4271,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SoundComponent",
+              "AudioClipRUID": "8d1a219aa2084ef39626cb12c8dee2b6",
+              "Loop": false,
+              "Pitch": 1.0,
+              "Volume": 0.29,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "d98c8307-fdd4-4052-ad76-d4bb6da31f72",
+        "path": "/maps/mainProgram/MapleVM/BIOS",
+        "componentNames": "MOD.Core.TransformComponent,script.MapleVMBIOS",
+        "jsonString": {
+          "name": "BIOS",
+          "path": "/maps/mainProgram/MapleVM/BIOS",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 3,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "d98c8307-fdd4-4052-ad76-d4bb6da31f72",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.1271,
+                "y": 0.6306,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.MapleVMBIOS",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "1aefcf35-06e9-4c3d-88ee-c3cac4cd955f",
+        "path": "/maps/mainProgram/MapleVM/FDD",
+        "componentNames": "MOD.Core.TransformComponent,script.FloppyDrive,MOD.Core.SoundComponent",
+        "jsonString": {
+          "name": "FDD",
+          "path": "/maps/mainProgram/MapleVM/FDD",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 4,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "1aefcf35-06e9-4c3d-88ee-c3cac4cd955f",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.0061,
+                "y": 0.157,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.FloppyDrive",
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SoundComponent",
+              "AudioClipRUID": "d2027dcf4f6d4a02abb008d5f1519485",
+              "Loop": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "c7af733b-82f9-4268-a28b-9fa368a25238",
+        "path": "/maps/mainProgram/MapleVM/FDD/Head",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SoundComponent",
+        "jsonString": {
+          "name": "Head",
+          "path": "/maps/mainProgram/MapleVM/FDD/Head",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 0,
+          "pathConstraints": "/////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "c7af733b-82f9-4268-a28b-9fa368a25238",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0003,
+                "y": -0.0017,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SoundComponent",
+              "AudioClipRUID": "9526876020f44a60bf199c8751fc2e6a",
+              "Loop": false,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "d2f213bf-3620-4736-9897-1e6bf90c0da4",
+        "path": "/maps/mainProgram/MapleVM/FDD/SpindleMotor",
+        "componentNames": "MOD.Core.TransformComponent,MOD.Core.SoundComponent",
+        "jsonString": {
+          "name": "SpindleMotor",
+          "path": "/maps/mainProgram/MapleVM/FDD/SpindleMotor",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 1,
+          "pathConstraints": "/////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "d2f213bf-3620-4736-9897-1e6bf90c0da4",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": 0.0003,
+                "y": -0.0017,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "MOD.Core.SoundComponent",
+              "AudioClipRUID": "d2027dcf4f6d4a02abb008d5f1519485",
+              "Loop": true,
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "7d2c4238-f157-4a0b-a903-04e6e3a6c565",
+        "path": "/maps/mainProgram/MapleVM/PIC",
+        "componentNames": "MOD.Core.TransformComponent,script.PIC8259",
+        "jsonString": {
+          "name": "PIC",
+          "path": "/maps/mainProgram/MapleVM/PIC",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 5,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "7d2c4238-f157-4a0b-a903-04e6e3a6c565",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.0086,
+                "y": 0.1571,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.PIC8259",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      },
+      {
+        "id": "9fe21404-7039-4535-b81d-b35cec3f0307",
+        "path": "/maps/mainProgram/MapleVM/FPU",
+        "componentNames": "MOD.Core.TransformComponent,script.FPUCore",
+        "jsonString": {
+          "name": "FPU",
+          "path": "/maps/mainProgram/MapleVM/FPU",
+          "nameEditable": true,
+          "enable": true,
+          "visible": true,
+          "localize": false,
+          "displayOrder": 6,
+          "pathConstraints": "////",
+          "revision": 1,
+          "origin": {
+            "type": "Model",
+            "entry_id": "mapempty",
+            "sub_entity_id": null,
+            "root_entity_id": "9fe21404-7039-4535-b81d-b35cec3f0307",
+            "replaced_model_id": null
+          },
+          "modelId": "mapempty",
+          "@components": [
+            {
+              "@type": "MOD.Core.TransformComponent",
+              "Position": {
+                "x": -0.0058,
+                "y": 0.1576,
+                "z": 0.0
+              },
+              "QuaternionRotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+              },
+              "Enable": true
+            },
+            {
+              "@type": "script.FPUCore",
+              "Enable": true
+            }
+          ],
+          "@version": 1
+        }
+      }
+    ]
+  }
+}

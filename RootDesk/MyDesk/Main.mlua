@@ -1,0 +1,31 @@
+@Component
+script Main extends Component
+
+	property Entity MachineUI = "b35ddb33-8a2a-45f6-8bc6-ba54c2bc9b6d"
+
+	property boolean IsIntroFinish = false
+
+	property Entity monitor = "640e47f6-44a9-4e2d-9fd6-ad6094149d00"
+
+	property string Logo = "345d731d30b5470dbd0cfff0d4e880b7"
+
+	property Entity CPU = "2a7c0ddd-0a37-497c-8287-634179d981f7"
+
+	@ExecSpace("ClientOnly")
+	method void OnBeginPlay()
+		    -- 엔티티에서 AvatarGUIRendererComponent를 가져옵니다.
+		    local avatarRender = self.Entity.AvatarGUIRendererComponent
+		    
+		    -- 컴포넌트가 존재할 경우에만 Enable을 조절합니다.
+		    if avatarRender ~= nil then
+		        avatarRender.Enable = false
+		    end
+		    
+		    -- MachineUI 프로퍼티가 유효한지 확인 후 활성화합니다.
+		    if self.MachineUI ~= nil then
+		        self.MachineUI.Enable = true
+		    end
+		    log("VM Ready")
+	end
+
+end

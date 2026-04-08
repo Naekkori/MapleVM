@@ -1,0 +1,41 @@
+@Component
+script About extends Component
+
+	property Entity loadingText = "79afdc7a-b90e-4a45-9f76-731b9ca74b12"
+	property Entity Dialog = "bd635800-90f6-4f9f-8d62-5c171a8eb1b3"
+	property TextComponent DialogTitle = "69490721-7cf3-444a-b7d4-47f50d13c97c"
+	property TextComponent DialogName = "b911bf30-e08f-4bf8-a6e0-223343ce71e3"
+	property TextComponent DialogScript = "0d7dbf00-c902-4726-a0b3-117287039440"
+	property Entity closeDialog = "95d9fd66-fd6c-4e73-ab6c-bb7961fd7bcf"
+	property table Description = {
+		"MapleVM 1.0",
+		"Author: Naekkori",
+		"-- OpenSource NOTICE ---",
+		"Embeddable Linux Kernel Subset - Linux for 8086 https://github.com/ghaerr/elks/blob/master/LICENSE",
+		"by Gregory Haerr"
+	}
+	method void OnBeginPlay()
+		if self.Dialog ~= nil then
+			self.Dialog.Visible = false
+		end
+	end
+	@EventSender("Entity", "79afdc7a-b90e-4a45-9f76-731b9ca74b12")
+	handler HandleButtonClickEvent(ButtonClickEvent event)
+		    if event.Entity == self.loadingText then
+			   local disp = ""
+			   for i = 1, #self.Description do
+					disp ..= self.Description[i] .. "\n"
+			   end
+		       self.Dialog.Visible=true
+			   self.DialogTitle.Text = "About"
+			   self.DialogName.Text = "SoftwareInfo"
+			   self.DialogScript.Text = disp
+		    end
+	end
+	@EventSender("Entity", "95d9fd66-fd6c-4e73-ab6c-bb7961fd7bcf")
+	handler HandleEvent(ButtonClickEvent event)
+		if event.Entity == self.closeDialog then
+			self.Dialog.Visible = false
+		end
+	end
+end

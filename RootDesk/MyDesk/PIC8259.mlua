@@ -1,0 +1,106 @@
+@Component
+script PIC8259 extends Component
+	
+	-- 8259 PIC 레지스터 및 상태 변수
+	property number IMR = 0xFC   -- Interrupt Mask Register (Timer, Keyboard unmasked)
+	property number IRR = 0      -- Interrupt Request Register
+	property number ISR = 0      -- In-Service Register
+	
+	property number VectorOffset = 0x08 -- 기본값 (ICW2에서 재설정됨)
+	
+	-- 초기화 상태 관리 (ICW1~4)
+	property number InitStep = 0 -- 0: Normal, 1: Wait ICW2, 2: Wait ICW3, 3: Wait ICW4
+	property boolean ExpectICW4 = false
+	
+	-- 포트 쓰기 처리 (0x20, 0x21 등)
+	method void Write(number port, number val)
+		if port % 2 == 0 then -- Command Register (0x20, 0xA0)
+			if (val & 0x10) ~= 0 then -- ICW1: 초기화 시작
+				self.InitStep = 1
+				self.IRR = 0
+				self.ISR = 0
+				self.IMR = 0xFF
+				self.ExpectICW4 = (val & 0x01) ~= 0
+				-- log("PIC: Initialization started (ICW1)")
+			elseif (val & 0x08) == 0 and (val & 0x10) == 0 then -- OCW2
+				if (val & 0x20) ~= 0 then -- Non-specific EOI
+					-- ISR에서 우선순위가 가장 높은(가장 낮은 비트) 비트 클리어
+					self:ClearHighestPriorityISR()
+				end
+			end
+		else -- Data Register (0x21, 0xA1)
+			if self.InitStep == 1 then -- ICW2: Vector Offset 설정
+				self.VectorOffset = val & 0xF8
+				self.InitStep = self.InitStep + 1
+				log("PIC: Vector Offset set to " .. string.format("%02X", self.VectorOffset))
+			elseif self.InitStep == 2 then -- ICW3: Cascade (마스터/슬레이브) 설정
+				-- 단일 PIC 환경에서는 무시하거나 다음 단계로
+				if self.ExpectICW4 then self.InitStep = 3 else self.InitStep = 0 end
+			elseif self.InitStep == 3 then -- ICW4: 추가 설정
+				self.InitStep = 0
+			else -- OCW1: Interrupt Mask Register 설정
+				self.IMR = val
+			end
+		end
+	end
+	
+	-- 포트 읽기 처리
+	method number Read(number port)
+		if port % 2 == 1 then
+			return self.IMR
+		end
+		-- 기본적으로 IRR이나 ISR을 읽는 OCW3은 생략 (필요시 구현)
+		return 0
+	end
+	
+	-- 현재 대기 중인 인터럽트 중 가장 우선순위가 높은 것 반환
+	method number GetPendingInterrupt()
+		-- 마스킹되지 않은 요청 확인
+		local pending = self.IRR & (~self.IMR)
+		if pending == 0 then return -1 end
+		
+		-- 현재 서비스 중인 인터럽트(ISR)의 최고 우선순위 확인
+		local highestISR = -1
+		for i = 0, 7 do
+			if (self.ISR & (1 << i)) ~= 0 then
+				highestISR = i
+				break
+			end
+		end
+		
+		-- 요청된 IRQ 중 가장 높은 우선순위 찾기
+		for i = 0, 7 do
+			if (pending & (1 << i)) ~= 0 then
+				-- 중첩 인터럽트 규칙: 현재 서비스 중인 것보다 우선순위가 높아야 함 (낮은 인덱스)
+				if highestISR == -1 or i < highestISR then
+					return i
+				else
+					break
+				end
+			end
+		end
+		return -1
+	end
+	
+	-- 하드웨어 라인에서 IRQ 발생 (CPU -> PIC)
+	method void RaiseIRQ(number irq)
+		self.IRR = self.IRR | (1 << (irq & 7))
+	end
+	
+	-- CPU가 인터럽트를 승인함 (INTA)
+	method void AcknowledgeInterrupt(number irq)
+		self.IRR = self.IRR & ~(1 << irq)
+		self.ISR = self.ISR | (1 << irq)
+	end
+	
+	-- EOI 처리: 서비스 중인 가장 높은 우선순위 비트 제거
+	method void ClearHighestPriorityISR()
+		for i = 0, 7 do
+			if (self.ISR & (1 << i)) ~= 0 then
+				self.ISR = self.ISR & ~(1 << i)
+				break
+			end
+		end
+	end
+	
+end

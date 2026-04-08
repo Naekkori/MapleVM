@@ -1,0 +1,36 @@
+{
+  "Id": "",
+  "GameId": "",
+  "EntryKey": "material://36c41c11-9aae-4ee2-8975-7bc6a267ef9f",
+  "ContentType": "x-mod/material",
+  "Content": "",
+  "Usage": 0,
+  "UsePublish": 1,
+  "UseService": 0,
+  "CoreVersion": "26.3.0.0",
+  "StudioVersion": "0.1.0.0",
+  "DynamicLoading": 0,
+  "ContentProto": {
+    "Use": "Json",
+    "Json": {
+      "name": "LedVignette",
+      "id": "36c41c11-9aae-4ee2-8975-7bc6a267ef9f",
+      "shadertype": "Vignette",
+      "CenterPos": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "Intensity": 0.7,
+      "IsRound": true,
+      "Smoothness": 0.5,
+      "VignetteColor": {
+        "r": 0.0,
+        "g": 0.0,
+        "b": 0.0,
+        "a": 1.0
+      },
+      "IsUIMaterial": false,
+      "RequiresUIStencilStateChange": false
+    }
+  }
+}
