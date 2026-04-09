@@ -301,15 +301,22 @@ script CPUCore extends Component
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (에러)
 			end
 		elseif ah == 0x08 then -- Get Drive Parameters
-			-- 플로피 0번 기준 (DL=0)
-			self.Reg.Flags = self.Reg.Flags & (~1) -- CF=0 (성공)
-			self.Reg.AX = 0 -- AH=0
-			self.Reg.BX = 0x0004 -- BL=04h (1.44MB Floppy)
-			self.Reg.CX = (79 << 8) | 18 -- CH=79 (Cylinders-1), CL=18 (Sectors)
-			self.Reg.DX = (1 << 8) | 1 -- DH=1 (Heads-1), DL=1 (Drives)
-			self.Reg.ES = 0xF000
-			self.Reg.DI = 0x0080 -- DPT 주소 (MapleVMBIOS에서 설정한 위치)
-			log("BIOS: INT 13h Get Drive Parameters (1.44MB Floppy)")
+			-- DL: 드라이브 번호 (00h-7Fh: Floppy, 80h-FFh: HDD)
+			if dl == 0x00 then -- 첫 번째 플로피 드라이브
+				self.Reg.Flags = self.Reg.Flags & (~1) -- CF=0 (성공)
+				self.Reg.AX = 0 -- AH=0
+				self.Reg.BX = 0x0004 -- BL=04h (1.44MB Floppy)
+				self.Reg.CX = (79 << 8) | 18 -- CH=79 (Cylinders-1), CL=18 (Sectors)
+				self.Reg.DX = (1 << 8) | 1 -- DH=1 (Heads-1), DL=1 (Drives)
+				self.Reg.ES = 0xF000
+				self.Reg.DI = 0x0080 -- DPT 주소
+				log("BIOS: INT 13h Get Drive Parameters (1.44MB Floppy DL:00h)")
+			else
+				-- 지원하지 않는 드라이브 (HDD 등)
+				log_warning(string.format("BIOS: INT 13h Get Drive Parameters Unsupported Drive DL=%02Xh", dl))
+				self.Reg.Flags = self.Reg.Flags | 1 -- CF = 1 (Error)
+				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (Invalid Drive)
+			end
 		else
 			log_warning(string.format("BIOS: INT 13h Unsupported Function AH=%02Xh", ah))
 			self.Reg.Flags = self.Reg.Flags | 1 -- CF = 1 (Error)
@@ -1295,115 +1302,86 @@ script CPUCore extends Component
 			self.Reg.Flags = math.floor(fVal or 0) % 0x10000
 			-- log("IRET: Returned to " .. string.format("%04X:%04X", self.Reg.CS, self.Reg.IP))
 			
-		elseif opcode == 0xD0 then -- Group 2 (8-bit, 1-bit count)
+		elseif opcode >= 0xD0 and opcode <= 0xD3 then -- Group 2 (Shift/Rotate)
 			local modrm = self:FetchByte()
 			local group = (modrm >> 3) & 7
-			local mod = (modrm >> 6) & 3
-			local rm = modrm & 7
+			local mod, _, rm = self:DecodeModRM(modrm)
+			local isWord = (opcode & 1) == 1
 			
-			local val = 0
-			local addr = 0
-			if mod == 3 then
-				val = self:GetRegister8(rm)
-			else
-				addr = self:CalculateAddress(mod, rm)
-				val = self.Memory[addr] or 0
+			local count = 1
+			if opcode == 0xD2 or opcode == 0xD3 then
+				count = self.Reg.CX & 0xFF -- CL
 			end
 			
-			local result = val
-			local outCarry = 0
-			
-			if group == 4 then -- SHL r/m8, 1
-				outCarry = (val >> 7) & 1
-				result = (val << 1) & 0xFF
-			elseif group == 5 then -- SHR r/m8, 1
-				outCarry = val & 1
-				result = (val >> 1) & 0xFF
-			elseif group == 7 then -- SAR r/m8, 1
-				outCarry = val & 1
-				local sign = val & 0x80
-				result = (val >> 1) | sign
-			end
-			
-			-- 결과 저장
-			if mod == 3 then
-				self:SetRegister8(rm, result)
-			else
-				self.Memory[addr] = result
-			end
-			
-			-- 플래그 업데이트
-			self:UpdateFlags(result, "LOGIC")
-			if outCarry == 1 then
-				self.Reg.Flags = self.Reg.Flags | 0x0001
-			else
-				self.Reg.Flags = self.Reg.Flags & ~0x0001
-			end
-		elseif opcode == 0xD1 then -- Group 2 (16 bit, 1-bit count)
-			local modRM = self:FetchByte()
-			local mod, group, rm = self:DecodeModRM(modRM)
-			
-			local val = 0
-			local addr = 0
-			if mod == 3 then
-				val = self:GetReg16ByIndex(rm)
-			else
-				addr = self:CalculateAddress(mod, rm)
-				val = self:ReadWord(addr)
-			end
-			
-			local result = val
-			local outCarry = 0
-			
-			if group == 0 then -- ROL
-				outCarry = (val >> 15) & 1
-				result = ((val << 1) | outCarry) & 0xFFFF
-			elseif group == 1 then -- ROR
-				outCarry = val & 1
-				result = ((val >> 1) | (outCarry << 15)) & 0xFFFF
-			elseif group == 4 or group == 6 then -- SHL/SAL
-				outCarry = (val >> 15) & 1
-				result = (val << 1) & 0xFFFF
-			elseif group == 5 then -- SHR
-				outCarry = val & 1
-				result = (val >> 1) & 0xFFFF
-			elseif group == 7 then -- SAR
-				outCarry = val & 1
-				local sign = val & 0x8000
-				result = (val >> 1) | sign
-			end
-			
-			-- 결과 저장
-			if mod == 3 then
-				self:SetReg16ByIndex(rm, result)
-			else
-				self:WriteWord(addr, result)
-			end
-			
-			-- Carry Flag 업데이트
-			if outCarry == 1 then
-				self.Reg.Flags = self.Reg.Flags | 0x0001
-			else
-				self.Reg.Flags = self.Reg.Flags & ~0x0001
-			end
-		elseif opcode == 0xD3 then -- Shift
-			local modrm = self:FetchByte()
-			local mod, reg, rm = self:DecodeModRM(modrm)
-			local count = self.Reg.CX & 0x1F
-			if count > 0 and mod == 3 then
-				local val = self:GetReg16ByIndex(rm)
-				if reg == 4 then -- SHL
-					val = (val << count)
-				elseif reg == 5 then -- SHR
-					val = (val >> count)
-				elseif reg == 7 then -- SAR
-					if (val & 0x8000) ~= 0 then
-						val = (val >> count) | (0xFFFF << (16 - count))
-					else
-						val = (val >> count)
+			if count > 0 then
+				local val = 0
+				local addr = 0
+				if mod == 3 then
+					val = isWord and self:GetRegister16(rm) or self:GetRegister8(rm)
+				else
+					addr = self:CalculateAddress(mod, rm)
+					val = isWord and self:ReadWord(addr) or self:ReadByte(addr)
+				end
+				
+				local res = val
+				local cf = (self.Reg.Flags & 1)
+				local mask = isWord and 0xFFFF or 0xFF
+				local msb = isWord and 0x8000 or 0x80
+				
+				for i = 1, count do
+					if group == 0 then -- ROL
+						cf = (res & msb) ~= 0 and 1 or 0
+						res = ((res << 1) | cf) & mask
+					elseif group == 1 then -- ROR
+						cf = res & 1
+						res = (res >> 1) | (cf ~= 0 and msb or 0)
+					elseif group == 2 then -- RCL
+						local next_cf = (res & msb) ~= 0 and 1 or 0
+						res = ((res << 1) | cf) & mask
+						cf = next_cf
+					elseif group == 3 then -- RCR
+						local next_cf = res & 1
+						res = (res >> 1) | (cf ~= 0 and msb or 0)
+						cf = next_cf
+					elseif group == 4 or group == 6 then -- SHL/SAL
+						cf = (res & msb) ~= 0 and 1 or 0
+						res = (res << 1) & mask
+					elseif group == 5 then -- SHR
+						cf = res & 1
+						res = (res >> 1) & mask
+					elseif group == 7 then -- SAR
+						cf = res & 1
+						local sign = res & msb
+						res = (res >> 1) | sign
 					end
 				end
-				self:SetReg16ByIndex(rm, val)
+				
+				if mod == 3 then
+					if isWord then self:SetRegister16(rm, res) else self:SetRegister8(rm, res) end
+				else
+					if isWord then self:WriteWord(addr, res) else self:WriteByte(addr, res) end
+				end
+				
+				-- Flags: CF, SF, ZF, PF
+				self.Reg.Flags = (self.Reg.Flags & ~0x08D1)
+				if cf == 1 then self.Reg.Flags = self.Reg.Flags | 0x0001 end
+				self:UpdateFlags(res, isWord and "LOGIC16" or "LOGIC")
+				
+				-- OF (Only for count == 1)
+				if count == 1 then
+					local resMSB = (res & msb) ~= 0 and 1 or 0
+					if group == 0 or group == 2 or group == 4 or group == 6 then
+						if resMSB ~= cf then self.Reg.Flags = self.Reg.Flags | 0x0800 end
+					elseif group == 1 or group == 3 or group == 5 then
+						local valMSB = (val & msb) ~= 0 and 1 or 0
+						if group == 5 then
+							if valMSB == 1 then self.Reg.Flags = self.Reg.Flags | 0x0800 end
+						elseif group == 1 or group == 3 then
+							local resMSB2 = isWord and ((res & 0x4000) ~= 0 and 1 or 0) or ((res & 0x40) ~= 0 and 1 or 0)
+							if resMSB ~= resMSB2 then self.Reg.Flags = self.Reg.Flags | 0x0800 end
+						end
+					end
+				end
 			end
 		elseif opcode == 0xD7 then -- XLAT
 			-- 기본 세그먼트는 DS, 오버라이드가 있으면 그것을 사용
@@ -1526,64 +1504,101 @@ script CPUCore extends Component
 			self:WritePort(self.Reg.DX, self.Reg.AX)
 		elseif opcode == 0xF0 then -- LOCK prefix
 			-- 단일코어 에뮬레이션 이라서 메모리잠금 필요없음
-		elseif opcode == 0xF3 then -- REP
+		elseif opcode == 0xF2 or opcode == 0xF3 then -- REPNE (0xF2) / REP (0xF3)
+			local isRepne = (opcode == 0xF2)
 			local nextOp = self:FetchByte()
 			local seg = self.segmentOverride or self.Reg.DS
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			
-			while self.Reg.CX > 0 do
-				if nextOp == 0xAC then -- LODSB
-					local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
-					self.Reg.AX = (self.Reg.AX & 0xFF00) | self:ReadByte(src)
-					self.Reg.SI = (self.Reg.SI + (df and -1 or 1)) & 0xFFFF
-				elseif nextOp == 0xAD then -- LODSW
-					local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
-					self.Reg.AX = self:ReadWord(src)
-					self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
-				elseif nextOp == 0xAA then -- STOSB
+			while (self.Reg.CX or 0) > 0 do
+				if nextOp == 0xAE then -- SCASB
 					local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteByte(dst, self.Reg.AX & 0xFF)
+					local val = self:ReadByte(dst)
+					local al = self.Reg.AX & 0xFF
+					self:UpdateFlags(al - val, "SUB8")
 					self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
-				elseif nextOp == 0xAB then -- STOSW
+					self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
+					local zf = (self.Reg.Flags & 0x0040) ~= 0
+					if isRepne then if zf then break end else if not zf then break end end
+				elseif nextOp == 0xAF then -- SCASW
 					local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteWord(dst, self.Reg.AX)
+					local val = self:ReadWord(dst)
+					self:UpdateFlags(self.Reg.AX - val, "SUB")
 					self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
-				elseif nextOp == 0xA4 then -- MOVSB
+					self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
+					local zf = (self.Reg.Flags & 0x0040) ~= 0
+					if isRepne then if zf then break end else if not zf then break end end
+				elseif nextOp == 0xA6 then -- CMPSB
 					local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
 					local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteByte(dst, self:ReadByte(src))
+					local v1 = self:ReadByte(src)
+					local v2 = self:ReadByte(dst)
+					self:UpdateFlags(v1 - v2, "SUB8")
 					self.Reg.SI = (self.Reg.SI + (df and -1 or 1)) & 0xFFFF
 					self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
-				elseif nextOp == 0xA5 then -- MOVSW
+					self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
+					local zf = (self.Reg.Flags & 0x0040) ~= 0
+					if isRepne then if zf then break end else if not zf then break end end
+				elseif nextOp == 0xA7 then -- CMPSW
 					local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
 					local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteWord(dst, self:ReadWord(src))
+					local v1 = self:ReadWord(src)
+					local v2 = self:ReadWord(dst)
+					self:UpdateFlags(v1 - v2, "SUB")
 					self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
 					self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
-				elseif nextOp == 0x6C then -- INSB
-					local port = self.Reg.DX
-					local val = self:ReadPort8(port)
-					local phyAddr = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteByte(phyAddr, val)
-					if (self.Reg.Flags & 0x0400) == 0 then
-						self.Reg.DI = (self.Reg.DI + 1) & 0xFFFF
+					self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
+					local zf = (self.Reg.Flags & 0x0040) ~= 0
+					if isRepne then if zf then break end else if not zf then break end end
+				elseif not isRepne then
+					-- Existing REP (0xF3) logic for MOVS, STOS, LODS, INS, OUTS
+					if nextOp == 0xAC then -- LODSB
+						local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
+						self.Reg.AX = (self.Reg.AX & 0xFF00) | self:ReadByte(src)
+						self.Reg.SI = (self.Reg.SI + (df and -1 or 1)) & 0xFFFF
+					elseif nextOp == 0xAD then -- LODSW
+						local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
+						self.Reg.AX = self:ReadWord(src)
+						self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
+					elseif nextOp == 0xAA then -- STOSB
+						local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteByte(dst, self.Reg.AX & 0xFF)
+						self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
+					elseif nextOp == 0xAB then -- STOSW
+						local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteWord(dst, self.Reg.AX)
+						self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
+					elseif nextOp == 0xA4 then -- MOVSB
+						local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
+						local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteByte(dst, self:ReadByte(src))
+						self.Reg.SI = (self.Reg.SI + (df and -1 or 1)) & 0xFFFF
+						self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
+					elseif nextOp == 0xA5 then -- MOVSW
+						local src = ((seg << 4) + self.Reg.SI) & 0xFFFFF
+						local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteWord(dst, self:ReadWord(src))
+						self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
+						self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
+					elseif nextOp == 0x6C then -- INSB
+						local port = self.Reg.DX
+						local val = self:ReadPort8(port)
+						local phyAddr = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteByte(phyAddr, val)
+						self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
+					elseif nextOp == 0x6D then -- INSW
+						local port = self.Reg.DX
+						local val = self:ReadPort16(port)
+						local phyAddr = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+						self:WriteWord(phyAddr, val)
+						self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
 					else
-						self.Reg.DI = (self.Reg.DI - 1) & 0xFFFF
+						break
 					end
-				elseif nextOp == 0x6D then -- INSW
-					local port = self.Reg.DX
-					local val = self:ReadPort16(port)
-					local phyAddr = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
-					self:WriteWord(phyAddr, val)
-					if (self.Reg.Flags & 0x0400) == 0 then
-						self.Reg.DI = (self.Reg.DI + 2) & 0xFFFF
-					else
-						self.Reg.DI = (self.Reg.DI - 2) & 0xFFFF
-					end
+					self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
 				else
 					break
 				end
-				self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
 			end
 			
 		elseif opcode == 0xF4 then -- HLT
@@ -1629,6 +1644,18 @@ script CPUCore extends Component
 					self.Reg.Flags = self.Reg.Flags | 0x0001
 				else
 					self.Reg.Flags = self.Reg.Flags & ~0x0001
+				end
+			elseif group == 4 then -- MUL r/m16
+				local src = val
+				local res = self.Reg.AX * src
+				self.Reg.AX = res & src
+				self.Reg.DX = (res >> 16) & 0xFFFF
+
+				-- MUL은 결과의 상위 워드가 0이 아니면 CF, 0F 를 설정함
+				if self.Reg.DX ~= 0 then
+					self.Reg.Flags = self.Reg.Flags | 0x0801 -- CF=1, 0F=1
+				else
+					self.Reg.Flags = self.Reg.Flags & ~0x0801
 				end
 			end
 			
@@ -1784,7 +1811,7 @@ script CPUCore extends Component
 		-- 세그먼트 오버라이드 해제 (명령어 실행 완료 후)
 		self.segmentOverride = nil
 		
-		--[[ 디버그
+		-- 디버그
 		local regs = self.Reg
 		--비교할 상태 요약 (IP와 주요 레지스터)
 		local currentPrint = string.format("IP:%04X AX:%04X BX:%04X CX:%04X DX:%04X SP:%04X",
@@ -2174,37 +2201,36 @@ script CPUCore extends Component
 		local is8Bit = string.find(opType, "8") ~= nil
 		local mask = is8Bit and 0xFF or 0xFFFF
 		local signBit = is8Bit and 0x80 or 0x8000
-		
+
 		result = math.floor(result or 0)
 		local resMasked = result & mask
-		
+
 		local f = math.floor(self.Reg.Flags or 0)
-		
+
 		-- Zero Flag (ZF): 결과가 0이면 설정
-		if resMasked == 0 then f = f | 0x0040 else f = f & 0xFFBF end
-		
+		if resMasked == 0 then f = f | 0x0040 else f = f & ~0x0040 end
+
 		-- Sign Flag (SF): 최상위 비트(MSB)가 1이면 설정
-		if (resMasked & signBit) ~= 0 then f = f | 0x0080 else f = f & 0xFF7F end
-		
+		if (resMasked & signBit) ~= 0 then f = f | 0x0080 else f = f & ~0x0080 end
+
 		-- Parity Flag (PF): 하위 8비트 중 1의 개수가 짝수면 설정
 		local low8, count = resMasked & 0xFF, 0
 		for i = 0, 7 do if (low8 >> i) & 1 == 1 then count = count + 1 end end
-		if count % 2 == 0 then f = f | 0x0004 else f = f & 0xFFFB end
-		
+		if count % 2 == 0 then f = f | 0x0004 else f = f & ~0x0004 end
+
 		if opType == "LOGIC" or opType == "LOGIC8" then
 			-- 논리 연산은 CF(bit 0)와 OF(bit 11)를 0으로 만듦
-			f = f & 0xF7FE
+			f = f & ~0x0801
 		elseif opType == "ADD" or opType == "ADC" or opType == "ADD8" or opType == "ADC8" then
 			-- Carry Flag (CF): 결과가 비트 범위를 초과하면 설정
-			if result > mask then f = f | 0x0001 else f = f & 0xFFFE end
-		elseif opType == "SUB" or opType == "CMP" or opType == "SUB8" or opType == "CMP8" then
+			if result > mask then f = f | 0x0001 else f = f & ~0x0001 end
+		elseif opType == "SUB" or opType == "CMP" or opType == "SBB" or opType == "SUB8" or opType == "CMP8" or opType == "SBB8" then
 			-- Carry/Borrow Flag (CF): 결과가 0보다 작으면 설정 (Borrow 발생)
-			if result < 0 then f = f | 0x0001 else f = f & 0xFFFE end
+			if result < 0 then f = f | 0x0001 else f = f & ~0x0001 end
 		end
-		
+
 		self.Reg.Flags = f
-	end
-	method void HandleTimerInterrupt()
+	end	method void HandleTimerInterrupt()
 		-- BDA (BIOS Data Area)의 0x0040:0x006C 번지 틱 카운터 증가
 		local low = self:ReadByte(0x46C)
 		local high = self:ReadByte(0x46D)

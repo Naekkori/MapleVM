@@ -162,6 +162,7 @@ script FloppyDrive extends Component
 		-- CHS -> LBA 변환
 		local headsPerDisk = 2
 		local sectorsPerTrack = 18
+		
 		local startLba = (c * headsPerDisk + h) * sectorsPerTrack + (s - 1)
 		
 		-- 음수 LBA 방지
@@ -179,23 +180,30 @@ script FloppyDrive extends Component
 			local hexData = self.HDDImage[currentLba]
 			
 			if not hexData then
-				log_error("Disk: Sector not found at LBA " .. currentLba)
+				log_error(string.format("Disk: Sector not found! LBA:%d (C:%d H:%d S:%d)", currentLba, c, h, s + i))
 				return false
 			end
+			
+			if #hexData < 1024 then
+				log_warning(string.format("Disk: Sector data too short! LBA:%d, Length:%d", currentLba, #hexData))
+				-- 데이터가 짧아도 일단 진행하되 나머지는 0으로 채우는게 안전할 수 있음
+			end
+			
 			local sectorOffset = i * 512
 			-- 512바이트 메모리 전송
 			for j = 0, 511 do
 				local startIdx = (j * 2) + 1
 				local byteStr = string.sub(hexData, startIdx, startIdx + 1)
-				if #byteStr < 2 then break end -- 데이터 부족 시 중단
-				local byteVal = tonumber(byteStr, 16) or 0
-				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF -- 매번 마스킹
-				-- log("FDD: destAddr:"..destAddr.." byteVal:"..byteVal)
+				local byteVal = 0
+				if #byteStr == 2 then
+					byteVal = tonumber(byteStr, 16) or 0
+				end
+				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF
 				cpu:WriteByte(destAddr, byteVal)
 			end
 		end
 		
-		log(string.format("FDD: Read %d sectors (C:%d H:%d S:%d)", count, c, h, s))
+		log(string.format("FDD: Read %d sectors (C:%d H:%d S:%d) -> LBA:%d", count, c, h, s, startLba))
 		return true
 	end
 	
