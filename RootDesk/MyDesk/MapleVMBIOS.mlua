@@ -31,15 +31,19 @@ script MapleVMBIOS extends Component
 		if cpu then
 			-- 인터럽트 벡터 정의
 			local vectors = {
-				{int = 0x08, ip = 0x0020, cs = 0xF000}, -- 타이머 (bios.asm의 0x0020 위치)
-				{int = 0x09, ip = 0x0024, cs = 0xF000}, -- 키보드 (bios.asm의 0x0024 위치)
+				{int = 0x08, ip = 0x0020, cs = 0xF000}, -- 타이머
+				{int = 0x09, ip = 0x0024, cs = 0xF000}, -- 키보드 하드웨어
 				{int = 0x10, ip = 0x0100, cs = 0xF000}, -- 비디오
 				{int = 0x11, ip = 0x0110, cs = 0xF000}, -- 장비 체크
 				{int = 0x12, ip = 0x0120, cs = 0xF000}, -- 메모리 크기
 				{int = 0x13, ip = 0x0130, cs = 0xF000}, -- 디스크 서비스
-				{int = 0x19, ip = 0x0580, cs = 0xF000}, -- 부팅 인터럽트 (iret 핸들러 위치로 변경)
-				{int = 0x1E, ip = 0x0080, cs = 0xF000}, -- 디스크 파라미터 테이블 (DPT) 포인터 추가
-				{int = 0xF0, ip = 0x0580, cs = 0xF000}, -- 하이퍼바이저 (intF0_handler 위치)
+				{int = 0x14, ip = 0x0140, cs = 0xF000}, -- 시리얼 서비스
+				{int = 0x15, ip = 0x0150, cs = 0xF000}, -- 시스템 서비스
+				{int = 0x16, ip = 0x0160, cs = 0xF000}, -- 키보드 서비스
+				{int = 0x17, ip = 0x0170, cs = 0xF000}, -- 프린터 서비스
+				{int = 0x19, ip = 0x0580, cs = 0xF000}, -- 부팅 인터럽트
+				{int = 0x1E, ip = 0x0080, cs = 0xF000}, -- 디스크 파라미터 테이블 (DPT)
+				{int = 0xF0, ip = 0x0580, cs = 0xF000}, -- 하이퍼바이저
 			}
 			
 			for _, v in ipairs(vectors) do
