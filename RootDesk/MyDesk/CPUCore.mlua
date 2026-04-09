@@ -122,10 +122,14 @@ script CPUCore extends Component
 	method void WriteByte(number addr, number value)
 		addr = addr & 0xFFFFF
 		if addr >= 0xF0000 then return end -- ROM Read-only 보호
-		
+
+		-- IVT 영역(0x0000-0x03FF) 쓰기 시 경고 로그 (선택적)
+		-- if addr < 0x0400 then
+		--	log(string.format("CPU: IVT Write at %04X, Val: %02X", addr, value))
+		-- end
+
 		self.Memory[addr] = (value & 0xFF)
-	end
-	
+	end	
 	method void RaiseHardwareInterrupt(number irq)
 		if self.PIC then
 			self.PIC.PIC8259:RaiseIRQ(irq)
