@@ -443,6 +443,8 @@ script CPUCore extends Component
 		if self.State ~= "RUNNING" then return end
 		
 		local opcode = self:FetchByte()
+		 -- log(string.format("CPU: Executing Opcode %02X at %04X:%04X", opcode, self.Reg.CS, self.Reg.IP-1))
+
 		if opcode == 0x00 then -- ADD r/m8, r8
 			local modrm = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modrm)

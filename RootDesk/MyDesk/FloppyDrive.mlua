@@ -238,7 +238,6 @@ script FloppyDrive extends Component
 		local baseDestAddr = ((es << 4) + bx) & 0xFFFFF -- 20비트 주소 제한
 		
 		log(string.format("DISK IO: LBA: %d, Count: %d, ES: %04X, BX: %04X", startLba, count, es, bx))
-		
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
 			local hexData = self.HDDImage[currentLba]
@@ -264,6 +263,7 @@ script FloppyDrive extends Component
 				end
 				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF
 				cpu:WriteByte(destAddr, byteVal)
+			--	log(string.format("DISK: Copying %d bytes to Memory %05X", count * 512, baseDestAddr))
 			end
 		end
 		
