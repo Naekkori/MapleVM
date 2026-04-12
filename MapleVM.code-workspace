@@ -5,6 +5,9 @@
     },
     {
       "path": "../MapleBIOS"
+    },
+    {
+      "path": "../img To MapleVM FDD Dataset"
     }
   ],
   "settings": {
@@ -36,6 +39,12 @@
         "envManager": "ms-python.python:venv",
         "packageManager": "ms-python.python:pip",
         "workspace": "LinuxinMSW"
+      },
+      {
+        "path": "imgtocsv.py",
+        "envManager": "ms-python.python:venv",
+        "packageManager": "ms-python.python:pip",
+        "workspace": "img To MapleVM FDD Dataset"
       }
     ]
   }
