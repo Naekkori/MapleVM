@@ -150,6 +150,7 @@ script FloppyDrive extends Component
 	end
 	
 	method boolean ReadSectors(number c, number h, number s, number count, number es, number bx)
+		
 		-- 하드웨어가 준비(셀프 테스트 완료)되지 않았으면 읽기 거부
 		if not self.IsReady then
 			log_warning("Disk: Device not ready (Performing Self-Test)")
@@ -159,10 +160,70 @@ script FloppyDrive extends Component
 			log_warning("DISK: Invalid sector" .. s .. " request, Adjusting 1")
 			s = 1
 		end
-		-- CHS -> LBA 변환
-		local headsPerDisk = 2
-		local sectorsPerTrack = 18
 		
+		-- CHS -> LBA 변환
+		-- 왜그런지 모르겠지만 반대로 하니 작동함 일단 건들지 않음
+		local headsPerDisk = 18
+		local sectorsPerTrack = 2
+		--[[
+		[02:03:18] [CLIENT] BIOS: Floppy Diskette Parameter Table (DPT) Initialized at F000:0080
+		MapleVMBIOS.OnInitialize (at RootDesk\MyDesk\MapleVMBIOS.mlua:65)
+		
+		[02:03:18] [CLIENT] Disk: Data Loading...
+		FloppyDrive.OnInitialize (at RootDesk\MyDesk\FloppyDrive.mlua:31)
+		
+		[02:03:18] [CLIENT] Disk: Data Loading Complete. Total sectors: 2880
+		FloppyDrive.OnInitialize (at RootDesk\MyDesk\FloppyDrive.mlua:49)
+		
+		[02:03:18] [CLIENT] Disk: System Self-Test Start
+		FloppyDrive.OnBeginPlay (at RootDesk\MyDesk\FloppyDrive.mlua:56)
+		
+		[02:03:21] [CLIENT] Disk: System Self-Test Complete - READY
+		FloppyDrive.OnBeginPlay (at RootDesk\MyDesk\FloppyDrive.mlua:90)
+		
+		[02:03:21] [CLIENT] DISK IO: LBA: 0, Count: 1, ES: 0000, BX: 7C00
+		FloppyDrive.ReadSectors (at RootDesk\MyDesk\FloppyDrive.mlua:181)
+		CPUCore.HandleBootInterrupt (at RootDesk\MyDesk\CPUCore.mlua:406)
+		CPUCore.ExecuteInterrupt (at RootDesk\MyDesk\CPUCore.mlua:214)
+		CPUCore.Step (at RootDesk\MyDesk\CPUCore.mlua:1356)
+		CPUCore.ExecuteBatch (at RootDesk\MyDesk\CPUCore.mlua:2167)
+		CPUCore.OnUpdate (at RootDesk\MyDesk\CPUCore.mlua:2194)
+		
+		[02:03:21] [CLIENT] DISK IO: LBA: 1, Count: 1, ES: 9000, BX: 0200
+		FloppyDrive.ReadSectors (at RootDesk\MyDesk\FloppyDrive.mlua:181)
+		CPUCore.HandleDiskInterrupt (at RootDesk\MyDesk\CPUCore.mlua:337)
+		CPUCore.ExecuteInterrupt (at RootDesk\MyDesk\CPUCore.mlua:196)
+		CPUCore.Step (at RootDesk\MyDesk\CPUCore.mlua:1356)
+		CPUCore.ExecuteBatch (at RootDesk\MyDesk\CPUCore.mlua:2167)
+		CPUCore.OnUpdate (at RootDesk\MyDesk\CPUCore.mlua:2194)
+		
+		[02:03:21] [CLIENT] DISK IO: LBA: 2, Count: 1, ES: 9000, BX: 03EC
+		FloppyDrive.ReadSectors (at RootDesk\MyDesk\FloppyDrive.mlua:181)
+		CPUCore.HandleDiskInterrupt (at RootDesk\MyDesk\CPUCore.mlua:337)
+		CPUCore.ExecuteInterrupt (at RootDesk\MyDesk\CPUCore.mlua:196)
+		CPUCore.Step (at RootDesk\MyDesk\CPUCore.mlua:1356)
+		CPUCore.ExecuteBatch (at RootDesk\MyDesk\CPUCore.mlua:2167)
+		CPUCore.OnUpdate (at RootDesk\MyDesk\CPUCore.mlua:2194)
+		
+		[02:03:21] [CLIENT] DISK IO: LBA: 4, Count: 2, ES: 9000, BX: 07F4
+		FloppyDrive.ReadSectors (at RootDesk\MyDesk\FloppyDrive.mlua:181)
+		CPUCore.HandleDiskInterrupt (at RootDesk\MyDesk\CPUCore.mlua:337)
+		CPUCore.ExecuteInterrupt (at RootDesk\MyDesk\CPUCore.mlua:196)
+		CPUCore.Step (at RootDesk\MyDesk\CPUCore.mlua:1356)
+		CPUCore.ExecuteBatch (at RootDesk\MyDesk\CPUCore.mlua:2167)
+		CPUCore.OnUpdate (at RootDesk\MyDesk\CPUCore.mlua:2194)
+		
+		[02:03:21] [CLIENT] DISK IO: LBA: 1863, Count: 2, ES: 9000, BX: 13FA
+		FloppyDrive.ReadSectors (at RootDesk\MyDesk\FloppyDrive.mlua:181)
+		CPUCore.HandleDiskInterrupt (at RootDesk\MyDesk\CPUCore.mlua:337)
+		CPUCore.ExecuteInterrupt (at RootDesk\MyDesk\CPUCore.mlua:196)
+		CPUCore.Step (at RootDesk\MyDesk\CPUCore.mlua:1356)
+		CPUCore.ExecuteBatch (at RootDesk\MyDesk\CPUCore.mlua:2167)
+		CPUCore.OnUpdate (at RootDesk\MyDesk\CPUCore.mlua:2194)
+		
+		[02:03:24] [CLIENT] Disk: Spindle Motor Auto-Stop
+		FloppyDrive.OnUpdate (at RootDesk\MyDesk\FloppyDrive.mlua:113)
+		]]
 		local startLba = (c * headsPerDisk + h) * sectorsPerTrack + (s - 1)
 		
 		-- 음수 LBA 방지
@@ -175,6 +236,9 @@ script FloppyDrive extends Component
 		
 		local cpu = self.CPU.CPUCore
 		local baseDestAddr = ((es << 4) + bx) & 0xFFFFF -- 20비트 주소 제한
+		
+		log(string.format("DISK IO: LBA: %d, Count: %d, ES: %04X, BX: %04X", startLba, count, es, bx))
+		
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
 			local hexData = self.HDDImage[currentLba]
@@ -203,7 +267,6 @@ script FloppyDrive extends Component
 			end
 		end
 		
-		log(string.format("FDD: Read %d sectors (C:%d H:%d S:%d) -> LBA:%d", count, c, h, s, startLba))
 		return true
 	end
 	
