@@ -406,6 +406,13 @@ script CPUCore extends Component
 		local success = fdd:ReadSectors(0, 0, 1, 1, 0x0000, 0x7C00)
 		
 		if success then
+			-- 커널 로드 후 전체 섹터 덤프 (데이터 구조 상세 분석)
+			local dump = ""
+			for i = 0, 511 do
+				dump = dump .. string.format("%02X", self:ReadByte(0x90200 + i))
+			end
+			log("CPU: FULL Kernel Header Dump: " .. dump)
+			
 			log("CPU: Booting... Jumping to 0000:7C00")
 			self.Reg.CS = 0x0000
 			self.Reg.IP = 0x7C00
@@ -443,7 +450,11 @@ script CPUCore extends Component
 		if self.State ~= "RUNNING" then return end
 		
 		local opcode = self:FetchByte()
-		 -- log(string.format("CPU: Executing Opcode %02X at %04X:%04X", opcode, self.Reg.CS, self.Reg.IP-1))
+		-- 부트로더(7C00 이후) 동작 중 상세 로그
+		if (self.Reg.CS == 0 and self.Reg.IP > 0x7C00) or self.Reg.CS == 0xF000 then
+			log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X", 
+				opcode, self.Reg.CS, self.Reg.IP-1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
+		end
 
 		if opcode == 0x00 then -- ADD r/m8, r8
 			local modrm = self:FetchByte()
@@ -453,7 +464,7 @@ script CPUCore extends Component
 			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
 			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local result = (dest + src) & 0xFF
-			self:UpdateFlags("ADD", dest, src, dest + src)
+			self:UpdateFlags("ADD8", dest, src, dest + src)
 			if mod == 3 then self:SetReg8ByIndex(rm, result) else self:WriteByte(addr, result) end
 			
 		elseif opcode == 0x01 then -- ADD r/m16, r16
@@ -540,7 +551,7 @@ script CPUCore extends Component
 			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
 			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local result = (dest | src) & 0xFF
-			self:UpdateFlags("LOGIC", dest, src, result)
+			self:UpdateFlags("LOGIC8", dest, src, result)
 			if mod == 3 then self:SetReg8ByIndex(rm, result) else self:WriteByte(addr, result) end
 		elseif opcode == 0x09 then -- OR r/m16, r16
 			local modRM = self:FetchByte()
@@ -615,7 +626,7 @@ script CPUCore extends Component
 				self:SetRegister16(destRegIdx, result & 0xFFFF)
 				
 				-- 플래그 업데이트
-				self:UpdateFlags("ADD", destVal, srcVal + carry, result)
+				self:UpdateFlags("ADC", destVal, srcVal + carry, result)
 			end
 		elseif opcode == 0x12 then -- ADC r8, r/m8
 			local modRM = self:FetchByte()
@@ -660,7 +671,7 @@ script CPUCore extends Component
 			local result = destVal + srcVal + carry
 			
 			self:SetRegister16(regIdx, result & 0xFFFF)
-			self:UpdateFlags("ADD", destVal, srcVal + carry, result)
+			self:UpdateFlags("ADC", destVal, srcVal + carry, result)
 		elseif opcode == 0x14 then -- ADC AL, imm8
 			local imm = self:FetchByte()
 			local oldAL = self.Reg.AX & 0xFF
@@ -669,7 +680,7 @@ script CPUCore extends Component
 			local result = oldAL + imm + cf
 			local newAL = result & 0xFF
 			
-			self:UpdateFlags("ADD8", oldAL, imm + cf, result)
+			self:UpdateFlags("ADC8", oldAL, imm + cf, result)
 			
 			self.Reg.AX = (self.Reg.AX & 0xFF00) | newAL
 		elseif opcode == 0x16 then -- PUSH SS
@@ -714,7 +725,7 @@ script CPUCore extends Component
 			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
 			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local result = dest - src
-			self:UpdateFlags("SUB", dest, src, result)
+			self:UpdateFlags("SUB8", dest, src, result)
 			if mod == 3 then self:SetReg8ByIndex(rm, result & 0xFF) else self:WriteByte(addr, result & 0xFF) end
 			
 		elseif opcode == 0x29 then -- SUB r/m16, r16
@@ -742,7 +753,7 @@ script CPUCore extends Component
 			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
 			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local result = dest ~ src
-			self:UpdateFlags("LOGIC", dest, src, result)
+			self:UpdateFlags("LOGIC8", dest, src, result)
 			if mod == 3 then self:SetReg8ByIndex(rm, result) else self:WriteByte(addr, result) end
 			
 		elseif opcode == 0x31 then -- XOR r/m16, r16
@@ -795,7 +806,7 @@ script CPUCore extends Component
 			
 			-- 뺄셈 수행
 			local result = destVal - srcVal
-			self:UpdateFlags("SUB", destVal, srcVal, result)
+			self:UpdateFlags("CMP8", destVal, srcVal, result)
 		elseif opcode == 0x39 then -- CMP r/m16, r16
 			local modrm = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modrm)
@@ -809,7 +820,7 @@ script CPUCore extends Component
 			end
 			
 			-- 결과값 은 저장하지 않고 플래그만 업데이트
-			self:UpdateFlags("SUB", destVal, srcVal, destVal - srcVal)
+			self:UpdateFlags("CMP", destVal, srcVal, destVal - srcVal)
 		elseif opcode == 0x3B then -- CMP r16, r/m16
 			local modrm = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modrm)
@@ -818,11 +829,11 @@ script CPUCore extends Component
 			
 			local srcVal = (mod == 3) and self:GetRegister16(rm) or self:ReadWord(self:CalculateAddress(mod, rm))
 			
-			self:UpdateFlags("SUB", destVal, srcVal, destVal - srcVal)
+			self:UpdateFlags("CMP", destVal, srcVal, destVal - srcVal)
 		elseif opcode == 0x3C then -- CMP AL, imm8
 			local imm8 = self:FetchByte()
 			local al = self.Reg.AX & 0xFF
-			self:UpdateFlags("CMP", al, imm8, al - imm8)
+			self:UpdateFlags("CMP8", al, imm8, al - imm8)
 			
 		elseif opcode >= 0x40 and opcode <= 0x47 then
 			local regIdx = opcode - 0x40
@@ -904,7 +915,7 @@ script CPUCore extends Component
 			local imm8 = self:FetchByte()
 			
 			if reg_opcode == 7 then -- CMP
-				self:UpdateFlags("CMP", val, imm8, val - imm8)
+				self:UpdateFlags("CMP8", val, imm8, val - imm8)
 			elseif reg_opcode == 0 then -- ADD
 				local res = (val + imm8) & 0xFF
 				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
@@ -2185,7 +2196,6 @@ script CPUCore extends Component
 				return
 			end
 		end
-		
 		self.TimerAccumulator = (self.TimerAccumulator or 0) + dt
 		-- 54.925ms 마다 발생하는 PC 타이머 인터럽트 재현 (약 18.2Hz)
 		-- while 루프를 사용하여 프레임 드랍 시에도 타이머 틱이 유실되지 않도록 함
@@ -2303,6 +2313,9 @@ script CPUCore extends Component
 		local signBit = is8Bit and 0x80 or 0x8000
 		local msb = is8Bit and 0x80 or 0x8000
 		
+		-- 입력값 정규화 (8비트/16비트 경계에 맞춤)
+		dest = (dest or 0) & mask
+		src = (src or 0) & mask
 		result = math.floor(result or 0)
 		local resMasked = result & mask
 		local f = self.Reg.Flags & 0xF72A -- 기존 플래그에서 관리 대상 비트 제외
@@ -2316,19 +2329,20 @@ script CPUCore extends Component
 		
 		-- CF, OF (연산별)
 		if opType == "LOGIC" or opType == "LOGIC8" then
-			-- CF=0, OF=0
+			f = f & ~0x0801 -- CF=0, OF=0 (x86 표준)
 		elseif string.find(opType, "ADD") or string.find(opType, "ADC") then
 			if result > mask then f = f | 0x0001 end
-			if ((dest ~ result) & (src ~ result) & msb) ~= 0 then f = f | 0x0800 end
+			if ((dest ~ resMasked) & (src ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 		elseif string.find(opType, "SUB") or string.find(opType, "CMP") or string.find(opType, "SBB") then
-			if dest < (src + (string.find(opType, "SBB") and (self.Reg.Flags & 1) or 0)) then f = f | 0x0001 end
-			if ((dest ~ src) & (dest ~ result) & msb) ~= 0 then f = f | 0x0800 end
-		elseif opType == "INC" or opType == "DEC" then
+			local borrow = (string.find(opType, "SBB") and (self.Reg.Flags & 1) or 0)
+			if dest < (src + borrow) then f = f | 0x0001 end
+			if ((dest ~ src) & (dest ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
+		elseif opType == "INC" or opType == "DEC" or opType == "INC8" or opType == "DEC8" then
 			local oldCF = self.Reg.Flags & 0x0001
-			if opType == "INC" then
-				if ((dest ~ result) & (1 ~ result) & msb) ~= 0 then f = f | 0x0800 end
+			if string.find(opType, "INC") then
+				if ((dest ~ resMasked) & (1 ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 			else
-				if ((dest ~ 1) & (dest ~ result) & msb) ~= 0 then f = f | 0x0800 end
+				if ((dest ~ 1) & (dest ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 			end
 			f = (f & 0xFFFE) | oldCF -- INC/DEC는 CF를 유지
 		end
@@ -2339,17 +2353,15 @@ script CPUCore extends Component
 	-- x86 스타일 정수 나눗셈 (0을 향한 절삭)
 	method table _x86_div(number dividend, number divisor, boolean isSigned, boolean is32Bit)
 		if divisor == 0 then return {error = "DIV0"} end
-		
+
 		local quot, rem
 		if isSigned then
-			local absDivd = math.abs(dividend)
-			local absDivs = math.abs(divisor)
-			quot = math.floor(absDivd / absDivs)
-			if (dividend < 0) ~= (divisor < 0) then quot = -quot end
+			local q = dividend / divisor
+			quot = (q >= 0) and math.floor(q) or math.ceil(q)
 			rem = dividend - (quot * divisor)
-			
-			local limit = is32Bit and 32767 or 127
-			if quot > limit or quot < -(limit + 1) then return {error = "OVERFLOW"} end
+
+			local qLimit = is32Bit and 32767 or 127
+			if quot > qLimit or quot < -(qLimit + 1) then return {error = "OVERFLOW"} end
 		else
 			quot = math.floor(dividend / divisor)
 			rem = dividend % divisor
@@ -2357,7 +2369,8 @@ script CPUCore extends Component
 			if quot > limit then return {error = "OVERFLOW"} end
 		end
 		return {quot = quot, rem = rem}
-	end	method void HandleTimerInterrupt()
+	end
+	method void HandleTimerInterrupt()
 		-- BDA (BIOS Data Area)의 0x0040:0x006C 번지 틱 카운터 증가
 		local low = self:ReadByte(0x46C)
 		local high = self:ReadByte(0x46D)
