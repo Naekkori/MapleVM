@@ -337,10 +337,16 @@ script CPUCore extends Component
 			local success = self.FDD.FloppyDrive:ReadSectors(cylinder, dh, sector, al, es, bx)
 			
 			if success then
+				local baseAddr = ((es << 4) + bx) & 0xFFFFF
+				local dump = ""
+				for i = 0, 15 do
+					dump = dump .. string.format("%02X", self:ReadByte(baseAddr + i))
+				end
+				log(string.format("BIOS: INT 13h Success, AL=%d, Target=%05X, Data=%s", al, baseAddr, dump))
+				
 				self.Reg.Flags = self.Reg.Flags & (~1) -- CF = 0
 				self.Reg.AX = (self.Reg.AX & 0x0000) | (al & 0xFF) -- AL에 읽은 섹터 수 유지
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0000 -- AH=0
-				log(string.format("BIOS: INT 13h Success, AL set to %d", al))
 			else
 				self.Reg.Flags = self.Reg.Flags | 1 -- 실패 시 CF = 1
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (에러)
