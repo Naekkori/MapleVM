@@ -147,8 +147,8 @@ script FloppyDrive extends Component
 			s = 1
 		end
 		
-		local headsPerDisk = 18
-		local sectorsPerTrack = 2
+		local headsPerDisk = 2
+		local sectorsPerTrack = 18
 		local startLba = ((c * headsPerDisk) + h) * sectorsPerTrack + (s - 1)
 		
 		if startLba < 0 then
