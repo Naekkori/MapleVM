@@ -176,8 +176,7 @@ script FloppyDrive extends Component
 			local hexData = self.HDDImage[currentLba]
 			
 			if not hexData then
-				log_error(string.format("Disk: Sector not found! LBA:%d (C:%d H:%d S:%d)", currentLba, c, h, s + i))
-				return false
+				hexData = string.rep("00", 512)
 			end
 			
 			local preview = string.sub(hexData, 1, 32)

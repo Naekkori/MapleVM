@@ -122,14 +122,14 @@ script CPUCore extends Component
 	method void WriteByte(number addr, number value)
 		addr = addr & 0xFFFFF
 		if addr >= 0xF0000 then return end -- ROM Read-only 보호
-
+		
 		-- IVT 영역(0x0000-0x03FF) 쓰기 시 경고 로그 (선택적)
 		-- if addr < 0x0400 then
 		--	log(string.format("CPU: IVT Write at %04X, Val: %02X", addr, value))
 		-- end
-
+		
 		self.Memory[addr] = (value & 0xFF)
-	end	
+	end
 	method void RaiseHardwareInterrupt(number irq)
 		if self.PIC then
 			self.PIC.PIC8259:RaiseIRQ(irq)
@@ -420,6 +420,8 @@ script CPUCore extends Component
 			log("CPU: FULL Kernel Header Dump: " .. dump)
 			
 			log("CPU: Booting... Jumping to 0000:7C00")
+			-- 부트로더 에게 드라이브 번호 (0x00 플로피) 전달
+			self.Reg.DX = (self.Reg.DX & 0xFF00) | 0x00
 			self.Reg.CS = 0x0000
 			self.Reg.IP = 0x7C00
 			-- Carry Flag 해제 (성공)
@@ -458,10 +460,10 @@ script CPUCore extends Component
 		local opcode = self:FetchByte()
 		-- 부트로더(7C00 이후) 동작 중 상세 로그
 		if (self.Reg.CS == 0 and self.Reg.IP > 0x7C00) or self.Reg.CS == 0xF000 then
-			log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X", 
-				opcode, self.Reg.CS, self.Reg.IP-1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
+			log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
+				opcode, self.Reg.CS, self.Reg.IP - 1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
 		end
-
+		
 		if opcode == 0x00 then -- ADD r/m8, r8
 			local modrm = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modrm)
@@ -566,7 +568,7 @@ script CPUCore extends Component
 			local addr = (mod < 3) and self:CalculateAddress(mod, rm) or nil
 			local dest = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
 			local result = (dest | src) & 0xFFFF
-
+			
 			self:UpdateFlags("LOGIC", dest, src, result)
 			if mod == 3 then
 				self:SetReg16ByIndex(rm, result)
@@ -580,7 +582,7 @@ script CPUCore extends Component
 			local addr = (mod < 3) and self:CalculateAddress(mod, rm) or nil
 			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local result = (dest | src) & 0xFF
-
+			
 			self:UpdateFlags("LOGIC8", dest, src, result)
 			self:SetReg8ByIndex(reg, result)
 		elseif opcode == 0x0B then -- OR r16, r/m16
@@ -590,7 +592,7 @@ script CPUCore extends Component
 			local addr = (mod < 3) and self:CalculateAddress(mod, rm) or nil
 			local dest = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
 			local result = (dest | src) & 0xFFFF
-
+			
 			self:UpdateFlags("LOGIC", dest, src, result)
 			self:SetReg16ByIndex(reg, result)
 		elseif opcode == 0x0C then -- OR AL, imm8
@@ -615,24 +617,22 @@ script CPUCore extends Component
 			
 		elseif opcode == 0x11 then -- ADC r/m16, r16
 			local modrm = self:FetchByte()
-			local regIdx = (modrm >> 3) & 7
-			local srcVal = self:GetRegister16(regIdx)
-			
-			-- Carry Flag 추출
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local srcVal = self:GetRegister16(reg)
 			local carry = (self.Reg.Flags & 0x0001)
 			
-			local mod = (modrm >> 6) & 3
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local destVal = (mod == 3) and self:GetRegister16(rm) or self:ReadWord(addr)
+			
+			local result = (destVal + srcVal + carry) & 0xFFFF
+			
+			self:UpdateFlags("ADC", destVal, srcVal + carry, result)
+			
 			if mod == 3 then
-				local destRegIdx = modrm & 7
-				local destVal = self:GetRegister16(destRegIdx)
-				
-				local result = destVal + srcVal + carry
-				
-				-- 16비트 오버플로 처리 및 저장
-				self:SetRegister16(destRegIdx, result & 0xFFFF)
-				
-				-- 플래그 업데이트
-				self:UpdateFlags("ADC", destVal, srcVal + carry, result)
+				self:SetRegister16(rm, result)
+			else
+				self:WriteWord(addr, result)
 			end
 		elseif opcode == 0x12 then -- ADC r8, r/m8
 			local modRM = self:FetchByte()
@@ -706,7 +706,99 @@ script CPUCore extends Component
 			local res = (ax & imm16) & 0xFFFF
 			self:UpdateFlags("LOGIC", ax, imm16, res)
 			self.Reg.AX = res
+		elseif opcode == 0x20 then -- AND r/m8, r8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local src = self:GetReg8ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local dest = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			local result = (dest & src) & 0xFF
+			self:UpdateFlags("LOGIC8", dest, src, result)
+			if mod == 3 then self:SetReg8ByIndex(rm, result) else self:WriteByte(addr, result) end
 			
+		elseif opcode == 0x21 then -- AND r/m16, r16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local src = self:GetReg16ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local dest = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
+			local result = (dest & src) & 0xFFFF
+			self:UpdateFlags("LOGIC", dest, src, result)
+			if mod == 3 then self:SetReg16ByIndex(rm, result) else self:WriteWord(addr, result) end
+			
+		elseif opcode == 0x22 then -- AND r8, r/m8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local dest = self:GetReg8ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local src = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			local result = (dest & src) & 0xFF
+			self:UpdateFlags("LOGIC8", dest, src, result)
+			self:SetReg8ByIndex(reg, result)
+			
+		elseif opcode == 0x23 then -- AND r16, r/m16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local dest = self:GetReg16ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local src = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
+			local result = (dest & src) & 0xFFFF
+			self:UpdateFlags("LOGIC", dest, src, result)
+			self:SetReg16ByIndex(reg, result)
+			
+		elseif opcode == 0x24 then -- AND AL, imm8
+			local imm8 = self:FetchByte()
+			local al = self.Reg.AX & 0xFF
+			local result = al & imm8
+			self:UpdateFlags("LOGIC8", al, imm8, result)
+			self.Reg.AX = (self.Reg.AX & 0xFF00) | result
+			
+		elseif opcode == 0x2A then -- SUB r8, r/m8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local dest = self:GetReg8ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local src = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			local result = (dest - src) & 0xFF
+			self:UpdateFlags("SUB8", dest, src, dest - src)
+			self:SetReg8ByIndex(reg, result)
+			
+		elseif opcode == 0x2B then -- SUB r16, r/m16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local dest = self:GetReg16ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local src = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
+			local result = (dest - src) & 0xFFFF
+			self:UpdateFlags("SUB", dest, src, dest - src)
+			self:SetReg16ByIndex(reg, result)
+			
+		elseif opcode == 0x2C then -- SUB AL, imm8
+			local imm8 = self:FetchByte()
+			local al = self.Reg.AX & 0xFF
+			local result = (al - imm8) & 0xFF
+			self:UpdateFlags("SUB8", al, imm8, al - imm8)
+			self.Reg.AX = (self.Reg.AX & 0xFF00) | result
+			
+		elseif opcode == 0x3A then -- CMP r8, r/m8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local dest = self:GetReg8ByIndex(reg)
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local src = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			self:UpdateFlags("CMP8", dest, src, dest - src)
+			
+		elseif opcode == 0x3D then -- CMP AX, imm16
+			local imm16 = self:FetchWord()
+			local ax = self.Reg.AX
+			self:UpdateFlags("CMP", ax, imm16, ax - imm16)
 		elseif opcode == 0x26 then -- ES override
 			self.segmentOverride = self.Reg.ES
 			self:Step()
@@ -1112,7 +1204,7 @@ script CPUCore extends Component
 			local offset = self:CalculateOffset(mod, rm)
 			self:SetRegister16(reg, offset)
 			self.segmentOverride = nil
-
+			
 		elseif opcode == 0x8E then -- MOV Sreg, r/m16
 			local modrm = self:FetchByte()
 			local mod, sreg, rm = self:DecodeModRM(modrm)
@@ -1210,7 +1302,7 @@ script CPUCore extends Component
 			local al = self.Reg.AX & 0xFF
 			local res = al & imm
 			self:UpdateFlags("LOGIC8", al, imm, res)
-
+			
 		elseif opcode == 0xAA then -- STOSB
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
@@ -1538,8 +1630,8 @@ script CPUCore extends Component
 			-- CX 감소
 			self.Reg.CX = (self.Reg.CX - 1) & 0xFFFF
 			
-			-- 조건 확인
-			local zf = (self.Reg.CX - 1) & 0xFFFF
+			-- Flags 레지스터 에서 실제  Zero Flag(비트 6) 상태를 추출
+			local zf = (self.Reg.Flags >> 6) & 1
 			if self.Reg.CX ~= 0 and zf == 0 then
 				self.Reg.IP = (self.Reg.IP + disp) & 0xFFFF
 			end
@@ -1748,7 +1840,7 @@ script CPUCore extends Component
 				end
 			elseif group == 6 then -- DIV AX, r/m8
 				local res = self:_x86_div(self.Reg.AX, val, false, false)
-				if res.error then self:RaiseHardwareInterrupt(0x00) return end
+				if res.error then self:RaiseHardwareInterrupt(0x00)return end
 				self:SetRegister8(0, res.quot) -- AL
 				self:SetRegister8(4, res.rem) -- AH
 			elseif group == 7 then -- IDIV AX, r/m8
@@ -1756,7 +1848,7 @@ script CPUCore extends Component
 				local s_ax = (ax >= 0x8000) and (ax - 0x10000) or ax
 				local s_val = (val >= 0x80) and (val - 0x100) or val
 				local res = self:_x86_div(s_ax, s_val, true, false)
-				if res.error then self:RaiseHardwareInterrupt(0x00) return end
+				if res.error then self:RaiseHardwareInterrupt(0x00)return end
 				self:SetRegister8(0, res.quot & 0xFF) -- AL
 				self:SetRegister8(4, res.rem & 0xFF) -- AH
 			end
@@ -1822,7 +1914,7 @@ script CPUCore extends Component
 			elseif group == 6 then -- DIV r/m16
 				local num = (self.Reg.DX << 16) | self.Reg.AX
 				local res = self:_x86_div(num, val, false, true)
-				if res.error then self:RaiseHardwareInterrupt(0x00) return end
+				if res.error then self:RaiseHardwareInterrupt(0x00)return end
 				self.Reg.AX = res.quot
 				self.Reg.DX = res.rem
 			elseif group == 7 then -- IDIV r/m16
@@ -1830,7 +1922,7 @@ script CPUCore extends Component
 				local s_num = (num >= 0x80000000) and (num - 0x100000000) or num
 				local s_val = (val >= 0x8000) and (val - 0x10000) or val
 				local res = self:_x86_div(s_num, s_val, true, true)
-				if res.error then self:RaiseHardwareInterrupt(0x00) return end
+				if res.error then self:RaiseHardwareInterrupt(0x00)return end
 				self.Reg.AX = res.quot & 0xFFFF
 				self.Reg.DX = res.rem & 0xFFFF
 			end
@@ -1961,11 +2053,11 @@ script CPUCore extends Component
 		if port >= 0x1F0 and port <= 0x1F7 then
 			return self.FDD and self.FDD.FloppyDrive:OnReadPort(port) or 0xFF
 			
-		-- 2. PIC (0x20, 0x21)
+			-- 2. PIC (0x20, 0x21)
 		elseif port == 0x20 or port == 0x21 then
 			return self.PIC and self.PIC.PIC8259:Read(port) or 0
 			
-		-- 3. 키보드 컨트롤러 (0x60, 0x64)
+			-- 3. 키보드 컨트롤러 (0x60, 0x64)
 		elseif port == 0x60 or port == 0x64 then
 			-- 키보드 데이터/상태 읽기
 			return 0x00
@@ -2359,13 +2451,13 @@ script CPUCore extends Component
 	-- x86 스타일 정수 나눗셈 (0을 향한 절삭)
 	method table _x86_div(number dividend, number divisor, boolean isSigned, boolean is32Bit)
 		if divisor == 0 then return {error = "DIV0"} end
-
+		
 		local quot, rem
 		if isSigned then
 			local q = dividend / divisor
 			quot = (q >= 0) and math.floor(q) or math.ceil(q)
 			rem = dividend - (quot * divisor)
-
+			
 			local qLimit = is32Bit and 32767 or 127
 			if quot > qLimit or quot < -(qLimit + 1) then return {error = "OVERFLOW"} end
 		else
