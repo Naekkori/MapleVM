@@ -3,7 +3,7 @@ script CPUCore extends Component
 	--[[
 	Maple VM 8086 Vitual Machine Engine
 	]]
-	property number ProcessorSpeed = 5000
+	property number ProcessorSpeed = 80
 	property Entity BIOS_Entity = "d98c8307-fdd4-4052-ad76-d4bb6da31f72"
 	
 	property Entity VGA = "6f033c67-5e1a-4e95-a098-72f48567f671"
@@ -28,7 +28,7 @@ script CPUCore extends Component
 	
 	property any segmentOverride = nil
 	property Entity PowerLED = "d83be435-5ade-430e-8fff-e68755cbac74"
-	
+	property TextComponent SpeedInput = "9bdc201e-fa3a-4452-aed0-654afa5f4ab9"
 	property number lastKeycode = 0
 	
 	property number TimerAccumulator = 0
@@ -107,7 +107,9 @@ script CPUCore extends Component
 		
 		log("CPU: Keyboard Mapping Initialized.")
 	end
-	
+	method void OnBeginPlay()
+		self.SpeedInput.Text = tostring(self.ProcessorSpeed)
+	end
 	method number ReadByte(number addr)
 		-- 20비트 물리 주소 제한
 		addr = addr & 0xFFFFF
@@ -194,7 +196,7 @@ script CPUCore extends Component
 				handledByHLE = true
 			elseif vector == 0x13 then
 				self:HandleDiskInterrupt()
-				log(string.format("INT13 DEBUG: AX: %04X, CX: %04X, DX: %04X ES: %04X BX: %04X", self.Reg.AX, self.Reg.CX, self.Reg.DX, self.Reg.ES, self.Reg.BX))
+				--log(string.format("INT13 DEBUG: AX: %04X, CX: %04X, DX: %04X ES: %04X BX: %04X", self.Reg.AX, self.Reg.CX, self.Reg.DX, self.Reg.ES, self.Reg.BX))
 				handledByHLE = true
 			elseif vector == 0x15 then
 				-- INT 15h (System Services) - ELKS 커널이 메모리 맵 확인용으로 자주 호출
@@ -2272,6 +2274,9 @@ script CPUCore extends Component
 	
 	method void ExecuteBatch()
 		if self.State == "STOP" then return end
+		local startTime = os.clock()
+		local timeLimit = 0.01 -- 10ms 타임 슬라이스
+		
 		for i = 1, self.ProcessorSpeed do
 			self:HandleHardwareInterrupts()
 			if self.State == "RUNNING" then
@@ -2279,6 +2284,10 @@ script CPUCore extends Component
 			elseif self.State == "HALT" then
 				break -- HALT 상태면 다음 프레임까지 대기 (인터럽트 발생 시 깨어남)
 			else
+				break
+			end
+			-- 타임 슬라이스 체크
+			if os.clock() - startTime > timeLimit then
 				break
 			end
 		end
@@ -2586,5 +2595,9 @@ script CPUCore extends Component
 			self.State = "RUNNING"
 			if self.VGA and self.VGA.GraphicsCard then self.VGA.GraphicsCard:ClearScreen() end
 		end
+	end
+	@EventSender("Entity","9bdc201e-fa3a-4452-aed0-654afa5f4ab9")
+	handler HandleSpeedInput(TextInputEndEditEvent event)
+		self.ProcessorSpeed = tonumber(event.text)
 	end
 end
