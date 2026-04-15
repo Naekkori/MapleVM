@@ -458,12 +458,12 @@ script CPUCore extends Component
 		if self.State ~= "RUNNING" then return end
 		
 		local opcode = self:FetchByte()
-		-- 부트로더(7C00 이후) 동작 중 상세 로그
+		--[[ 부트로더(7C00 이후) 동작 중 상세 로그
 		if (self.Reg.CS == 0 and self.Reg.IP > 0x7C00) or self.Reg.CS == 0xF000 then
 			log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
 				opcode, self.Reg.CS, self.Reg.IP - 1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
 		end
-		
+		--]]
 		if opcode == 0x00 then -- ADD r/m8, r8
 			local modrm = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modrm)
