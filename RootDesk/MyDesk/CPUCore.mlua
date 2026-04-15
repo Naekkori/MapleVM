@@ -2560,7 +2560,7 @@ script CPUCore extends Component
 		if ascii then
 			local isShift = _InputService:IsKeyPressed(KeyboardKey.LeftShift) or _InputService:IsKeyPressed(KeyboardKey.RightShift)
 			if isShift then
-				if ascii >= 96 and ascii <= 122 then ascii = ascii - 32
+				if ascii >= 97 and ascii <= 122 then ascii = ascii - 32
 				elseif ascii == 49 then
 					ascii = 33
 				elseif ascii == 50 then
