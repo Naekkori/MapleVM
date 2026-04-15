@@ -86,7 +86,7 @@ script CPUCore extends Component
 			["LeftBracket"] = 91,
 			["RightBracket"] = 93,
 			["Backslash"] = 92,
-			-- ["Grave"] = 96 메월드에서 작동안함
+			["BackQuote"] = 96 -- ` 키
 		}
 		
 		for keyName, ascii in pairs(specialKeys) do
