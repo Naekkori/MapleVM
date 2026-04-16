@@ -108,7 +108,9 @@ script CPUCore extends Component
 		log("CPU: Keyboard Mapping Initialized.")
 	end
 	method void OnBeginPlay()
-		self.SpeedInput.Text = tostring(self.ProcessorSpeed)
+		if self.SpeedInput and self.SpeedInput.Entity then
+			self.SpeedInput.Text = tostring(self.ProcessorSpeed)
+		end
 	end
 	method number ReadByte(number addr)
 		-- 20비트 물리 주소 제한
@@ -1342,7 +1344,9 @@ script CPUCore extends Component
 		elseif opcode == 0xBA then self.Reg.DX = self:FetchWord()
 		elseif opcode == 0xBB then self.Reg.BX = self:FetchWord()
 		elseif opcode == 0xBC then self.Reg.SP = self:FetchWord()
+		elseif opcode == 0xBD then self.Reg.BP = self:FetchWord()
 		elseif opcode == 0xBE then self.Reg.SI = self:FetchWord()
+		elseif opcode == 0xBF then self.Reg.DI = self:FetchWord()
 			
 		elseif opcode == 0xC2 then -- RET imm16 (Near)
 			local popBytes = self:FetchWord()
