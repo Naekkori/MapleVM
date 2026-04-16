@@ -82,7 +82,7 @@ script FloppyDrive extends Component
 		end
 		self.spindleMotor:Stop()
 		self.CurrentCylinder = 0
-		self.IsReady = true 
+		self.IsReady = true
 		log("Disk: System Self-Test Complete - READY")
 		if self.DiskLED then
 			self.DiskLED.SpriteGUIRendererComponent.Color = Color.FromHexCode("#626262")
@@ -118,7 +118,7 @@ script FloppyDrive extends Component
 		
 		if self.DiskLED then
 			self.DiskLED.SpriteGUIRendererComponent.Color = Color.green
-			self.DiskTimer = 0.5
+			self.DiskTimer = 0.4
 		end
 		
 		local headsPerDisk = 2
@@ -160,18 +160,12 @@ script FloppyDrive extends Component
 		self:_ApplyHardwareAccess(startLba)
 		
 		local cpu = self.CPU.CPUCore
-		local baseDestAddr = ((es << 4) + bx) & 0xFFFFF 
+		local baseDestAddr = ((es << 4) + bx) & 0xFFFFF
 		
 		log(string.format("DISK IO: LBA: %d, Count: %d, ES: %04X, BX: %04X (Addr: %05X)", startLba, count, es, bx, baseDestAddr))
 		
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
-			
-			-- [패치] 커널 조각 리다이렉션 (1863번 이후 -> 32번 이후)
-			if currentLba >= 1863 and currentLba <= 2880 then
-				local fragmentLba = currentLba - 1863 + 32
-				self.HDDImage[currentLba] = self.HDDImage[fragmentLba]
-			end
 			
 			local hexData = self.HDDImage[currentLba]
 			
@@ -179,6 +173,10 @@ script FloppyDrive extends Component
 				hexData = string.rep("00", 512)
 			end
 			
+			-- 커널 헤더 발견 시 로그 (성공 여부 확인용)
+			if hexData and string.sub(hexData, 1, 4) == "0103" then
+				log("!!! SUCCESS: Found Kernel Header at adjusted LBA: " .. currentLba)
+			end
 			local preview = string.sub(hexData, 1, 32)
 			log(string.format("DISK IO: LBA %d Data: %s", currentLba, preview))
 			
@@ -211,7 +209,7 @@ script FloppyDrive extends Component
 			local currentLba = startLba + i
 			local dataStr = ""
 			local sectorOffset = i * 512
-
+			
 			for j = 0, 511 do
 				local srcAddr = (baseAddr + sectorOffset + j) & 0xFFFFF
 				local byteVal = cpu:ReadByte(srcAddr)
@@ -225,18 +223,18 @@ script FloppyDrive extends Component
 	end
 	
 	method void OnWritePort(number port, number val)
-		if port == 0x1F2 then 
+		if port == 0x1F2 then
 			self.SelectedSectorCount = val
-		elseif port == 0x1F3 then 
+		elseif port == 0x1F3 then
 			self.SelectedLBA = (self.SelectedLBA & 0xFFFFFF00) | val
-		elseif port == 0x1F4 then 
+		elseif port == 0x1F4 then
 			self.SelectedLBA = (self.SelectedLBA & 0xFFFF00FF) | (val << 8)
-		elseif port == 0x1F5 then 
+		elseif port == 0x1F5 then
 			self.SelectedLBA = (self.SelectedLBA & 0xFF00FFFF) | (val << 16)
-		elseif port == 0x1F7 then 
-			if val == 0x20 then 
+		elseif port == 0x1F7 then
+			if val == 0x20 then
 				self:PreparePortBuffer()
-			elseif val == 0x30 then 
+			elseif val == 0x30 then
 				self.PortBuffer = {}
 				self.BufferIndex = 1
 				self:_ApplyHardwareAccess(self.SelectedLBA)
@@ -261,10 +259,10 @@ script FloppyDrive extends Component
 	end
 	
 	method number OnReadPort(number port)
-		if port == 0x1F7 then 
+		if port == 0x1F7 then
 			local status = 0x50
 			if #self.PortBuffer > 0 and self.BufferIndex <= #self.PortBuffer then
-				status = status | 0x08 
+				status = status | 0x08
 			end
 			return status
 		end
@@ -279,10 +277,15 @@ script FloppyDrive extends Component
 		for i = 0, self.SelectedSectorCount - 1 do
 			local hexData = self.HDDImage[self.SelectedLBA + i]
 			if hexData then
-				for j = 1, #hexData, 4 do
+				for j = 1, #hexData , 4 do
 					local low = tonumber(string.sub(hexData, j, j + 1), 16) or 0
 					local high = tonumber(string.sub(hexData, j + 2, j + 3), 16) or 0
 					table.insert(self.PortBuffer, (high << 8) | low)
+				end
+			else
+				-- 데이터가 없는 섹터는 0으로 256 워드(512 바이트)를 채워야 데이터가 밀리지 않음
+				for j = 1, 256 do
+					table.insert(self.PortBuffer, 0)
 				end
 			end
 		end
