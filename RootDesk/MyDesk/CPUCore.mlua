@@ -1331,6 +1331,19 @@ script CPUCore extends Component
 			self.Reg.AX = self:ReadWord(src)
 			self.Reg.SI = (self.Reg.SI + (df and -2 or 2)) & 0xFFFF
 			
+		elseif opcode == 0xAE or opcode == 0xAF then -- SCASB / SCASW
+			local isWord = (opcode == 0xAF)
+			local df = (self.Reg.Flags & 0x0400) ~= 0
+			local addr = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
+			
+			local val = isWord and self:ReadWord(addr) or self:ReadByte(addr)
+			local ax = isWord and self.Reg.AX or (self.Reg.AX & 0xFF)
+			
+			self:UpdateFlags(isWord and "SUB" or "SUB8", ax, val, ax - val)
+			
+			local delta = isWord and 2 or 1
+			self.Reg.DI = (self.Reg.DI + (df and -delta or delta)) & 0xFFFF
+			
 		elseif opcode == 0xB0 then self.Reg.AX = (self.Reg.AX & 0xFF00) | self:FetchByte() -- AL
 		elseif opcode == 0xB1 then self.Reg.CX = (self.Reg.CX & 0xFF00) | self:FetchByte() -- CL
 		elseif opcode == 0xB2 then self.Reg.DX = (self.Reg.DX & 0xFF00) | self:FetchByte() -- DL
@@ -1664,6 +1677,15 @@ script CPUCore extends Component
 		elseif opcode == 0xEA then -- JMP Far
 			local newIP = self:FetchWord()
 			local newCS = self:FetchWord()
+			
+			-- 디버깅: 점프 대상의 데이터 덤프
+			local entryData = {}
+			local addr = (newCS * 16 + newIP) & 0xFFFFF
+			for k = 0, 15 do
+				table.insert(entryData, string.format("%02X", self:ReadByte(addr + k)))
+			end
+			log("CPU: Jump Target Data (" .. string.format("%04X:%04X", newCS, newIP) .. "): " .. table.concat(entryData, " "))
+			
 			log(string.format("CPU: JMP Far to %04X:%04X", newCS, newIP))
 			self.Reg.IP = newIP
 			self.Reg.CS = newCS

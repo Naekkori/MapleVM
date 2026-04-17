@@ -142,6 +142,7 @@ script FloppyDrive extends Component
 			log_warning("Disk: Device not ready (Performing Self-Test)")
 			return false
 		end
+		log(string.format("DISK IO: Request C:%d H:%d S:%d Count:%d", c, h, s, count))
 		if s < 1 then
 			log_warning("DISK: Invalid sector " .. s .. " request, Adjusting 1")
 			s = 1
@@ -186,6 +187,12 @@ script FloppyDrive extends Component
 				local byteStr = string.sub(hexData, startIdx, startIdx + 1)
 				local byteVal = tonumber(byteStr, 16) or 0
 				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF
+				
+				-- SYSSEG(0x1000:0000 -> 0x10000) 근처에 데이터가 쓰일 때 로그 출력
+				if destAddr >= 0x10000 and destAddr < 0x10004 then
+					log(string.format("DISK IO: Write %02X at %05X", byteVal, destAddr))
+				end
+				
 				cpu:WriteByte(destAddr, byteVal)
 			end
 		end
