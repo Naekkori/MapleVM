@@ -41,7 +41,11 @@ script FloppyDrive extends Component
 			
 			if sectorStr and dataStr then
 				local sectorNum = tonumber(sectorStr)
-				self.HDDImage[sectorNum] = dataStr
+				local byteTable = {}
+				for j = 1, #dataStr, 2 do
+					table.insert(byteTable, tonumber(string.sub(dataStr, j, j + 1), 16) or 0)
+				end
+				self.HDDImage[sectorNum] = byteTable
 				loadedCount = loadedCount + 1
 			end
 		end
@@ -168,32 +172,21 @@ script FloppyDrive extends Component
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
 			
-			local hexData = self.HDDImage[currentLba]
-			
-			if not hexData then
-				hexData = string.rep("00", 512)
+			local sectorData = self.HDDImage[currentLba]
+			if not sectorData then
+				sectorData = {} -- 빈 섹터 대응 (0으로 채움)
+				for j = 1, 512 do sectorData[j] = 0 end
 			end
 			
 			-- 커널 헤더 발견 시 로그 (성공 여부 확인용)
-			if hexData and string.sub(hexData, 1, 4) == "0103" then
+			if sectorData[1] == 0x01 and sectorData[2] == 0x03 then
 				log("!!! SUCCESS: Found Kernel Header at adjusted LBA: " .. currentLba)
 			end
-			local preview = string.sub(hexData, 1, 32)
-			-- log(string.format("DISK IO: LBA %d Data: %s", currentLba, preview))
 			
 			local sectorOffset = i * 512
-			for j = 0, 511 do
-				local startIdx = (j * 2) + 1
-				local byteStr = string.sub(hexData, startIdx, startIdx + 1)
-				local byteVal = tonumber(byteStr, 16) or 0
-				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF
-				
-				-- SYSSEG(0x1000:0000 -> 0x10000) 근처에 데이터가 쓰일 때 로그 출력
-				-- if destAddr >= 0x10000 and destAddr < 0x10004 then
-				-- 	log(string.format("DISK IO: Write %02X at %05X", byteVal, destAddr))
-				-- end
-				
-				cpu:WriteByte(destAddr, byteVal)
+			for j = 1, 512 do
+				local destAddr = (baseDestAddr + sectorOffset + j - 1) & 0xFFFFF
+				cpu:WriteByte(destAddr, sectorData[j])
 			end
 		end
 		
