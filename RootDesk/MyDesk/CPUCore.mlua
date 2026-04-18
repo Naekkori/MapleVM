@@ -355,6 +355,18 @@ script CPUCore extends Component
 				self.Reg.Flags = self.Reg.Flags | 1 -- 실패 시 CF = 1
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (에러)
 			end
+		elseif ah == 0x03 then -- Write Sectors
+			local success = self.FDD.FloppyDrive:WriteSectors(cylinder, dh, sector, al, es, bx)
+			
+			if success then
+				log(string.format("BIOS: INT 13h Write Success, AL=%d", al))
+				self.Reg.Flags = self.Reg.Flags & (~1) -- CF = 0
+				self.Reg.AX = (al & 0xFF) -- AH=0, AL=Sectors written
+			else
+				log_error("BIOS: INT 13h Write Failed")
+				self.Reg.Flags = self.Reg.Flags | 1 -- CF = 1
+				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0300 -- AH = 03h (Write Fault)
+			end
 		elseif ah == 0x08 then -- Get Drive Parameters
 			-- DL: 드라이브 번호 (00h-7Fh: Floppy, 80h-FFh: HDD)
 			if dl == 0x00 or dl == 0x80 then -- 첫 번째 플로피 드라이브 혹은 HDD
@@ -792,7 +804,8 @@ script CPUCore extends Component
 			self.Reg.SP = (self.Reg.SP - 2) & 0xFFFF
 			local stackAddr = (self.Reg.SS << 4) + self.Reg.SP
 			self:WriteWord(stackAddr, self.Reg.SS)
-			
+		elseif opcode == 0x17 then -- POP SS
+			self.Reg.SS = self:PopStack()
 		elseif opcode == 0x1E then -- PUSH DS
 			self:PushStack(self.Reg.DS)
 			
@@ -979,6 +992,13 @@ script CPUCore extends Component
 			
 			self:UpdateFlags("LOGIC8", dest, src, result)
 			self:SetReg8ByIndex(reg, result)
+		elseif opcode == 0x34  then -- XOR AL, imm8
+			local imm8 = self:FetchByte()
+			local al = self.Reg.AX & 0xFF
+			local result = al ~ imm8
+
+			self:UpdateFlags("LOGIC8", al, imm8, result)
+			self.Reg.AX = (self.Reg.AX & 0xFF00) | result
 		elseif opcode == 0x35 then -- XOR AX, imm16
 			local imm16 = self:FetchWord()
 			local ax = self.Reg.AX
