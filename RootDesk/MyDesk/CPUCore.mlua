@@ -1009,11 +1009,11 @@ script CPUCore extends Component
 			
 			self:UpdateFlags("LOGIC", dest, src, result)
 			self:SetReg16ByIndex(reg, result)
-		elseif opcode == 0x34  then -- XOR AL, imm8
+		elseif opcode == 0x34 then -- XOR AL, imm8
 			local imm8 = self:FetchByte()
 			local al = self.Reg.AX & 0xFF
 			local result = al ~ imm8
-
+			
 			self:UpdateFlags("LOGIC8", al, imm8, result)
 			self.Reg.AX = (self.Reg.AX & 0xFF00) | result
 		elseif opcode == 0x35 then -- XOR AX, imm16
@@ -1533,7 +1533,7 @@ script CPUCore extends Component
 			local ax = self.Reg.AX
 			local res = ax & imm16
 			self:UpdateFlags("LOGIC", ax, imm16, res)
-
+			
 		elseif opcode == 0xAA then -- STOSB
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
@@ -1565,7 +1565,7 @@ script CPUCore extends Component
 			local al = self.Reg.AX & 0xFF
 			self:UpdateFlags("SUB8", al, val, al - val)
 			self.Reg.DI = (self.Reg.DI + (df and -1 or 1)) & 0xFFFF
-
+			
 		elseif opcode == 0xAF then -- SCASW
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
@@ -1573,7 +1573,7 @@ script CPUCore extends Component
 			local ax = self.Reg.AX
 			self:UpdateFlags("SUB", ax, val, ax - val)
 			self.Reg.DI = (self.Reg.DI + (df and -2 or 2)) & 0xFFFF
-
+			
 		elseif opcode == 0xB0 then self.Reg.AX = (self.Reg.AX & 0xFF00) | self:FetchByte() -- AL
 		elseif opcode == 0xB1 then self.Reg.CX = (self.Reg.CX & 0xFF00) | self:FetchByte() -- CL
 		elseif opcode == 0xB2 then self.Reg.DX = (self.Reg.DX & 0xFF00) | self:FetchByte() -- DL
@@ -2084,7 +2084,7 @@ script CPUCore extends Component
 			log("CPU: Halted.")
 		elseif opcode == 0xF5 then -- CMC (Complement Carry Flag)
 			self.Reg.Flags = self.Reg.Flags ~ 0x0001
-
+			
 		elseif opcode == 0xF6 then -- Group 3 - 8-bit unary instructions
 			local modrm = self:FetchByte()
 			local group = (modrm >> 3) & 7
