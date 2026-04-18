@@ -261,6 +261,10 @@ script FloppyDrive extends Component
 				log("FDD: PIO Sector Write Complete: " .. self.SelectedLBA)
 				self.PortBuffer = {}
 				self.SelectedLBA = self.SelectedLBA + 1
+				
+				if self.CPU and self.CPU.CPUCore then
+					self.CPU.CPUCore:RaiseHardwareInterrupt(14)
+				end
 			end
 		end
 	end
@@ -309,6 +313,10 @@ script FloppyDrive extends Component
 					table.insert(self.PortBuffer, 0)
 				end
 			end
+		end
+		
+		if self.CPU and self.CPU.CPUCore then
+			self.CPU.CPUCore:RaiseHardwareInterrupt(14)
 		end
 	end
 	

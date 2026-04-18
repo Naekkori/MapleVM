@@ -992,6 +992,23 @@ script CPUCore extends Component
 			
 			self:UpdateFlags("LOGIC8", dest, src, result)
 			self:SetReg8ByIndex(reg, result)
+			
+		elseif opcode == 0x33 then -- XOR r16, r/m16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			
+			local dest = self:GetReg16ByIndex(reg)
+			
+			local addr = nil
+			if mod < 3 then
+				addr = self:CalculateAddress(mod, rm)
+			end
+			local src = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(addr)
+			
+			local result = (dest ~ src) & 0xFFFF
+			
+			self:UpdateFlags("LOGIC", dest, src, result)
+			self:SetReg16ByIndex(reg, result)
 		elseif opcode == 0x34  then -- XOR AL, imm8
 			local imm8 = self:FetchByte()
 			local al = self.Reg.AX & 0xFF
@@ -1073,6 +1090,66 @@ script CPUCore extends Component
 		elseif opcode >= 0x58 and opcode <= 0x5F then -- POP
 			local regNames = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"}
 			self.Reg[regNames[opcode - 0x58 + 1]] = self:PopStack()
+			
+		elseif opcode == 0x60 then -- PUSHA
+			local tempSP = self.Reg.SP
+			self:PushStack(self.Reg.AX)
+			self:PushStack(self.Reg.CX)
+			self:PushStack(self.Reg.DX)
+			self:PushStack(self.Reg.BX)
+			self:PushStack(tempSP)
+			self:PushStack(self.Reg.BP)
+			self:PushStack(self.Reg.SI)
+			self:PushStack(self.Reg.DI)
+			
+		elseif opcode == 0x61 then -- POPA
+			self.Reg.DI = self:PopStack()
+			self.Reg.SI = self:PopStack()
+			self.Reg.BP = self:PopStack()
+			self:PopStack() -- throwaway SP
+			self.Reg.BX = self:PopStack()
+			self.Reg.DX = self:PopStack()
+			self.Reg.CX = self:PopStack()
+			self.Reg.AX = self:PopStack()
+			
+		elseif opcode == 0x62 then -- BOUND
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			if mod < 3 then
+				local addr = self:CalculateAddress(mod, rm)
+				local val = self:GetReg16ByIndex(reg)
+				local low = self:ReadWord(addr)
+				local high = self:ReadWord((addr + 2) & 0xFFFFF)
+				
+				local function toSigned(v) return (v > 32767) and (v - 65536) or v end
+				if toSigned(val) < toSigned(low) or toSigned(val) > toSigned(high) then
+					self:ExecuteInterrupt(5)
+				end
+			end
+			
+		elseif opcode == 0x69 or opcode == 0x6B then -- IMUL r16, r/m16, imm (80186+)
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local srcVal = (mod == 3) and self:GetReg16ByIndex(rm) or self:ReadWord(self:CalculateAddress(mod, rm))
+			
+			local imm
+			if opcode == 0x69 then
+				imm = self:FetchWord()
+				if imm > 32767 then imm = imm - 65536 end
+			else
+				imm = self:FetchByte()
+				if imm > 127 then imm = imm - 256 end
+			end
+			
+			local sSrc = (srcVal > 32767) and (srcVal - 65536) or srcVal
+			local result = sSrc * imm
+			self:SetReg16ByIndex(reg, result & 0xFFFF)
+			
+			if result < -32768 or result > 32767 then
+				self.Reg.Flags = self.Reg.Flags | 0x0801 -- CF=1, OF=1
+			else
+				self.Reg.Flags = self.Reg.Flags & (~0x0801) -- CF=0, OF=0
+			end
 			
 		elseif opcode == 0x68 then
 			self:PushStack(self:FetchWord())
@@ -1594,6 +1671,21 @@ script CPUCore extends Component
 			else
 				self:WriteWord(addr, imm16)
 			end
+		elseif opcode == 0xC8 then -- ENTER
+			local allocSize = self:FetchWord()
+			local nestingLevel = self:FetchByte() & 0x1F
+			self:PushStack(self.Reg.BP)
+			local framePtr = self.Reg.SP
+			if nestingLevel > 0 then
+				local tempBP = self.Reg.BP
+				for i = 1, nestingLevel - 1 do
+					tempBP = (tempBP - 2) & 0xFFFF
+					self:PushStack(self:ReadWord(((self.Reg.SS << 4) + tempBP) & 0xFFFFF))
+				end
+				self:PushStack(framePtr)
+			end
+			self.Reg.BP = framePtr
+			self.Reg.SP = (self.Reg.SP - allocSize) & 0xFFFF
 		elseif opcode == 0xC9 then
 			self.Reg.SP = self.Reg.BP
 			self.Reg.BP = self:PopStack()
@@ -1646,14 +1738,18 @@ script CPUCore extends Component
 			self.Reg.Flags = math.floor(fVal or 0) % 0x10000
 			-- log("IRET: Returned to " .. string.format("%04X:%04X", self.Reg.CS, self.Reg.IP))
 			
-		elseif opcode >= 0xD0 and opcode <= 0xD3 then -- Group 2 (Shift/Rotate)
+		elseif (opcode >= 0xD0 and opcode <= 0xD3) or (opcode == 0xC0 or opcode == 0xC1) then -- Group 2 (Shift/Rotate)
 			local modrm = self:FetchByte()
 			local group = (modrm >> 3) & 7
 			local mod, _, rm = self:DecodeModRM(modrm)
 			local isWord = (opcode & 1) == 1
 			
-			local count = 1
-			if opcode == 0xD2 or opcode == 0xD3 then
+			local count = 0
+			if opcode == 0xC0 or opcode == 0xC1 then
+				count = self:FetchByte() & 0x1F
+			elseif opcode == 0xD0 or opcode == 0xD1 then
+				count = 1
+			else
 				count = self.Reg.CX & 0xFF -- CL
 			end
 			
@@ -1727,6 +1823,33 @@ script CPUCore extends Component
 					end
 				end
 			end
+		elseif opcode == 0xD4 then -- AAM
+			local base = self:FetchByte()
+			if base == 0 then
+				self:ExecuteInterrupt(0)
+				return
+			end
+			local al = self.Reg.AX & 0xFF
+			local ah = math.floor(al / base)
+			al = al % base
+			self.Reg.AX = (ah << 8) | al
+			self:UpdateFlags("LOGIC", self.Reg.AX, 0, self.Reg.AX)
+			
+		elseif opcode == 0xD5 then -- AAD
+			local base = self:FetchByte()
+			local al = self.Reg.AX & 0xFF
+			local ah = (self.Reg.AX >> 8) & 0xFF
+			local result = (ah * base + al) & 0xFF
+			self.Reg.AX = result
+			self:UpdateFlags("LOGIC", result, 0, result)
+			
+		elseif opcode == 0xD6 then -- SALC
+			if (self.Reg.Flags & 1) ~= 0 then
+				self.Reg.AX = (self.Reg.AX & 0xFF00) | 0xFF
+			else
+				self.Reg.AX = (self.Reg.AX & 0xFF00) | 0x00
+			end
+			
 		elseif opcode == 0xD7 then -- XLAT
 			-- 기본 세그먼트는 DS, 오버라이드가 있으면 그것을 사용
 			local segment = self.segmentOverride or self.Reg.DS
