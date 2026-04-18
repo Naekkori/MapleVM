@@ -1959,6 +1959,9 @@ script CPUCore extends Component
 		elseif opcode == 0xF4 then -- HLT
 			self.State = "HALT"
 			log("CPU: Halted.")
+		elseif opcode == 0xF5 then -- CMC (Complement Carry Flag)
+			self.Reg.Flags = self.Reg.Flags ~ 0x0001
+
 		elseif opcode == 0xF6 then -- Group 3 - 8-bit unary instructions
 			local modrm = self:FetchByte()
 			local group = (modrm >> 3) & 7
