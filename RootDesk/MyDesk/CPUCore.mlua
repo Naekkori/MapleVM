@@ -365,7 +365,7 @@ script CPUCore extends Component
 				self.Reg.DX = (1 << 8) | 1 -- DH=1 (Heads-1), DL=1 (Drives)
 				self.Reg.ES = 0xF000
 				self.Reg.DI = 0x0080 -- DPT 주소
-				log(string.format("BIOS: Check FDD BL=%X, CH=%X, CL=%X, DH=%X, DL=%X", self.Reg.BX))
+				log(string.format("BIOS: Check FDD BL=%X, CH=%X, CL=%X, DH=%X, DL=%X", self.Reg.BX, self.Reg.CX >> 8, self.Reg.CX & 0xFF, self.Reg.DX >> 8, self.Reg.DX & 0xFF))
 			else
 				self.Reg.Flags = self.Reg.Flags | 1
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100
@@ -410,35 +410,35 @@ script CPUCore extends Component
 		end
 	end
 	
-method void HandleBootInterrupt()
-    local fdd = self.FDD.FloppyDrive
-    local bootSegment = 0x0000
-    local bootOffset = 0x7C00
-    -- 물리 주소 계산: (0 << 4) + 0x7C00 = 0x07C00
-    local targetPhysAddr = (bootSegment << 4) + bootOffset 
-
-    -- 1. 첫 번째 섹터를 정확한 위치에 로드
-    local success = fdd:ReadSectors(0, 0, 1, 1, bootSegment, bootOffset)
-    
-    if success then
-        -- 2. 덤프 주소를 로드한 주소(0x07C00)와 일치시킴
-        local dump = ""
-        for i = 0, 511 do
-            dump = dump .. string.format("%02X", self:ReadByte(targetPhysAddr + i))
-        end
-        log("CPU: FULL Kernel Header Dump (at 0x7C00): " .. dump)
-        
-        log("CPU: Booting... Jumping to 0000:7C00")
-        
-        self.Reg.DX = (self.Reg.DX & 0xFF00) | 0x00
-        self.Reg.CS = bootSegment
-        self.Reg.IP = bootOffset
-        self.Reg.Flags = self.Reg.Flags & ~0x0001
-    else
-        self.Reg.Flags = self.Reg.Flags | 0x0001
-        log("Disk: Boot sector error.")
-    end
-end
+	method void HandleBootInterrupt()
+		local fdd = self.FDD.FloppyDrive
+		local bootSegment = 0x0000
+		local bootOffset = 0x7C00
+		-- 물리 주소 계산: (0 << 4) + 0x7C00 = 0x07C00
+		local targetPhysAddr = (bootSegment << 4) + bootOffset
+		
+		-- 1. 첫 번째 섹터를 정확한 위치에 로드
+		local success = fdd:ReadSectors(0, 0, 1, 1, bootSegment, bootOffset)
+		
+		if success then
+			-- 2. 덤프 주소를 로드한 주소(0x07C00)와 일치시킴
+			local dump = ""
+			for i = 0, 511 do
+				dump = dump .. string.format("%02X", self:ReadByte(targetPhysAddr + i))
+			end
+			log("CPU: FULL Kernel Header Dump (at 0x7C00): " .. dump)
+			
+			log("CPU: Booting... Jumping to 0000:7C00")
+			
+			self.Reg.DX = (self.Reg.DX & 0xFF00) | 0x00
+			self.Reg.CS = bootSegment
+			self.Reg.IP = bootOffset
+			self.Reg.Flags = self.Reg.Flags & ~0x0001
+		else
+			self.Reg.Flags = self.Reg.Flags | 0x0001
+			log("Disk: Boot sector error.")
+		end
+	end
 	
 	method void HandleSoundDevice(number port, number val)
 		local sound = self.Speaker.SoundComponent
@@ -466,8 +466,8 @@ end
 		local opcode = self:FetchByte()
 		--[[ 부트로더(7C00 이후) 동작 중 상세 로그
 		if (self.Reg.CS == 0 and self.Reg.IP > 0x7C00) or self.Reg.CS == 0xF000 then
-			log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
-				opcode, self.Reg.CS, self.Reg.IP - 1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
+		log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
+		opcode, self.Reg.CS, self.Reg.IP - 1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
 		end
 		--]]
 		if opcode == 0x00 then -- ADD r/m8, r8
@@ -695,6 +695,99 @@ end
 			self:UpdateFlags("ADC8", oldAL, imm + cf, result)
 			
 			self.Reg.AX = (self.Reg.AX & 0xFF00) | newAL
+		elseif opcode == 0x15 then -- ADC AX, imm16
+			local imm = self:FetchWord()
+			local oldAX = self.Reg.AX
+			local cf = self.Reg.Flags & 0x0001
+			
+			local result = oldAX + imm + cf
+			
+			self:UpdateFlags("ADC", oldAX, imm + cf, result)
+			self.Reg.AX = result & 0xFFFF
+		elseif opcode == 0x18 then -- SBB r/m8, r8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local srcVal = self:GetReg8ByIndex(reg)
+			local cf = (self.Reg.Flags & 0x0001)
+			
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local destVal = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			
+			local result = destVal - srcVal - cf
+			
+			self:UpdateFlags("SBB8", destVal, srcVal + cf, result)
+			
+			if mod == 3 then
+				self:SetReg8ByIndex(rm, result & 0xFF)
+			else
+				self:WriteByte(addr, result & 0xFF)
+			end
+		elseif opcode == 0x19 then -- SBB r/m16, r16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local srcVal = self:GetRegister16(reg)
+			local cf = (self.Reg.Flags & 0x0001)
+			
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local destVal = (mod == 3) and self:GetRegister16(rm) or self:ReadWord(addr)
+			
+			local result = destVal - srcVal - cf
+			
+			self:UpdateFlags("SBB", destVal, srcVal + cf, result)
+			
+			if mod == 3 then
+				self:SetRegister16(rm, result & 0xFFFF)
+			else
+				self:WriteWord(addr, result & 0xFFFF)
+			end
+		elseif opcode == 0x1A then -- SBB r8, r/m8
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local destVal = self:GetReg8ByIndex(reg)
+			local cf = (self.Reg.Flags & 0x0001)
+			
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local srcVal = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
+			
+			local result = destVal - srcVal - cf
+			
+			self:UpdateFlags("SBB8", destVal, srcVal + cf, result)
+			self:SetReg8ByIndex(reg, result & 0xFF)
+		elseif opcode == 0x1B then -- SBB r16, r/m16
+			local modrm = self:FetchByte()
+			local mod, reg, rm = self:DecodeModRM(modrm)
+			local destVal = self:GetRegister16(reg)
+			local cf = (self.Reg.Flags & 0x0001)
+			
+			local addr = nil
+			if mod < 3 then addr = self:CalculateAddress(mod, rm) end
+			local srcVal = (mod == 3) and self:GetRegister16(rm) or self:ReadWord(addr)
+			
+			local result = destVal - srcVal - cf
+			
+			self:UpdateFlags("SBB", destVal, srcVal + cf, result)
+			self:SetRegister16(reg, result & 0xFFFF)
+		elseif opcode == 0x1C then -- SBB AL, imm8
+			local imm = self:FetchByte()
+			local oldAL = self.Reg.AX & 0xFF
+			local cf = self.Reg.Flags & 0x0001
+			
+			local result = oldAL - imm - cf
+			
+			self:UpdateFlags("SBB8", oldAL, imm + cf, result)
+			self.Reg.AX = (self.Reg.AX & 0xFF00) | (result & 0xFF)
+		elseif opcode == 0x1D then -- SBB AX, imm16
+			local imm = self:FetchWord()
+			local oldAX = self.Reg.AX
+			local cf = self.Reg.Flags & 0x0001
+			
+			local result = oldAX - imm - cf
+			
+			self:UpdateFlags("SBB", oldAX, imm + cf, result)
+			self.Reg.AX = result & 0xFFFF
 		elseif opcode == 0x16 then -- PUSH SS
 			self.Reg.SP = (self.Reg.SP - 2) & 0xFFFF
 			local stackAddr = (self.Reg.SS << 4) + self.Reg.SP
@@ -1010,7 +1103,7 @@ end
 			
 			if jump then self.Reg.IP = (self.Reg.IP + rel) & 0xFFFF end
 			
-		elseif opcode == 0x80 then -- ALU r/m8, imm8
+		elseif opcode == 0x80 or opcode == 0x82 then -- ALU r/m8, imm8
 			local modrm = self:FetchByte()
 			local mod, reg_opcode, rm = self:DecodeModRM(modrm)
 			local addr = nil
@@ -1018,20 +1111,38 @@ end
 			local val = (mod == 3) and self:GetReg8ByIndex(rm) or self:ReadByte(addr)
 			local imm8 = self:FetchByte()
 			
-			if reg_opcode == 7 then -- CMP
-				self:UpdateFlags("CMP8", val, imm8, val - imm8)
-			elseif reg_opcode == 0 then -- ADD
+			if reg_opcode == 0 then -- ADD
 				local res = (val + imm8) & 0xFF
 				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
 				self:UpdateFlags("ADD8", val, imm8, val + imm8)
-			elseif reg_opcode == 5 then -- SUB
-				local res = (val - imm8) & 0xFF
+			elseif reg_opcode == 1 then -- OR
+				local res = (val | imm8) & 0xFF
 				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
-				self:UpdateFlags("SUB8", val, imm8, val - imm8)
+				self:UpdateFlags("LOGIC8", val, imm8, res)
+			elseif reg_opcode == 2 then -- ADC
+				local cf = self.Reg.Flags & 1
+				local res = (val + imm8 + cf) & 0xFF
+				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
+				self:UpdateFlags("ADC8", val, imm8 + cf, val + imm8 + cf)
+			elseif reg_opcode == 3 then -- SBB
+				local cf = self.Reg.Flags & 1
+				local res = (val - imm8 - cf) & 0xFF
+				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
+				self:UpdateFlags("SBB8", val, imm8 + cf, val - imm8 - cf)
 			elseif reg_opcode == 4 then -- AND
 				local res = (val & imm8) & 0xFF
 				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
 				self:UpdateFlags("LOGIC8", val, imm8, res)
+			elseif reg_opcode == 5 then -- SUB
+				local res = (val - imm8) & 0xFF
+				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
+				self:UpdateFlags("SUB8", val, imm8, val - imm8)
+			elseif reg_opcode == 6 then -- XOR
+				local res = (val ~ imm8) & 0xFF
+				if mod == 3 then self:SetReg8ByIndex(rm, res) else self:WriteByte(addr, res) end
+				self:UpdateFlags("LOGIC8", val, imm8, res)
+			elseif reg_opcode == 7 then -- CMP
+				self:UpdateFlags("CMP8", val, imm8, val - imm8)
 			end
 		elseif opcode == 0x81 or opcode == 0x83 then -- ALU r/m16, imm16 / imm8 (sign-extened)
 			local modrm = self:FetchByte()
@@ -1857,15 +1968,15 @@ end
 				end
 			elseif group == 6 then -- DIV AX, r/m8
 				local res = self:_x86_div(self.Reg.AX, val, false, false)
-				if res.error then self:RaiseHardwareInterrupt(0x00)return end
-				self:SetRegister8(0, res.quot) -- AL
-				self:SetRegister8(4, res.rem) -- AH
+				if res.error then self:ExecuteInterrupt(0x00)return end
+				self:SetRegister8(0, res.quot & 0xFF) -- AL
+				self:SetRegister8(4, res.rem & 0xFF) -- AH
 			elseif group == 7 then -- IDIV AX, r/m8
 				local ax = self.Reg.AX
 				local s_ax = (ax >= 0x8000) and (ax - 0x10000) or ax
 				local s_val = (val >= 0x80) and (val - 0x100) or val
 				local res = self:_x86_div(s_ax, s_val, true, false)
-				if res.error then self:RaiseHardwareInterrupt(0x00)return end
+				if res.error then self:ExecuteInterrupt(0x00)return end
 				self:SetRegister8(0, res.quot & 0xFF) -- AL
 				self:SetRegister8(4, res.rem & 0xFF) -- AH
 			end
@@ -1931,15 +2042,15 @@ end
 			elseif group == 6 then -- DIV r/m16
 				local num = (self.Reg.DX << 16) | self.Reg.AX
 				local res = self:_x86_div(num, val, false, true)
-				if res.error then self:RaiseHardwareInterrupt(0x00)return end
-				self.Reg.AX = res.quot
-				self.Reg.DX = res.rem
+				if res.error then self:ExecuteInterrupt(0x00)return end
+				self.Reg.AX = res.quot & 0xFFFF
+				self.Reg.DX = res.rem & 0xFFFF
 			elseif group == 7 then -- IDIV r/m16
 				local num = (self.Reg.DX << 16) | self.Reg.AX
 				local s_num = (num >= 0x80000000) and (num - 0x100000000) or num
 				local s_val = (val >= 0x8000) and (val - 0x10000) or val
 				local res = self:_x86_div(s_num, s_val, true, true)
-				if res.error then self:RaiseHardwareInterrupt(0x00)return end
+				if res.error then self:ExecuteInterrupt(0x00)return end
 				self.Reg.AX = res.quot & 0xFFFF
 				self.Reg.DX = res.rem & 0xFFFF
 			end
@@ -2432,41 +2543,40 @@ end
 	method void UpdateFlags(string opType, number dest, number src, number result)
 		local is8Bit = string.find(opType, "8") ~= nil
 		local mask = is8Bit and 0xFF or 0xFFFF
-		local signBit = is8Bit and 0x80 or 0x8000
 		local msb = is8Bit and 0x80 or 0x8000
 		
-		-- 입력값 정규화 (8비트/16비트 경계에 맞춤)
-		dest = (dest or 0) & mask
-		src = (src or 0) & mask
-		result = math.floor(result or 0)
-		local resMasked = result & mask
-		local f = self.Reg.Flags & 0xF72A -- 기존 플래그에서 관리 대상 비트 제외
+		-- 입력값 정규화 (전체 결과 보존을 위해 mask 적용 전 sign-check 수행)
+		local d = (dest or 0) & mask
+		local s = (src or 0) -- mask 적용 전 (ADC/SBB 캐리 포함 값 유지를 위해)
+		local resMasked = math.floor(result or 0) & mask
+		local f = self.Reg.Flags & 0xF72A
 		
-		-- ZF, SF, PF (공통)
+		-- ZF, SF, PF
 		if resMasked == 0 then f = f | 0x0040 end
-		if (resMasked & signBit) ~= 0 then f = f | 0x0080 end
+		if (resMasked & msb) ~= 0 then f = f | 0x0080 end
 		local low8, count = resMasked & 0xFF, 0
 		for i = 0, 7 do if (low8 >> i) & 1 == 1 then count = count + 1 end end
 		if count % 2 == 0 then f = f | 0x0004 end
 		
-		-- CF, OF (연산별)
+		-- CF, OF
 		if opType == "LOGIC" or opType == "LOGIC8" then
-			f = f & ~0x0801 -- CF=0, OF=0 (x86 표준)
+			f = f & ~0x0801
 		elseif string.find(opType, "ADD") or string.find(opType, "ADC") then
-			if result > mask then f = f | 0x0001 end
-			if ((dest ~ resMasked) & (src ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
+			if (d + s) > mask then f = f | 0x0001 end
+			-- OF = (dest_msb == src_msb) && (dest_msb != res_msb)
+			if ((d ~ resMasked) & (s ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 		elseif string.find(opType, "SUB") or string.find(opType, "CMP") or string.find(opType, "SBB") then
-			local borrow = (string.find(opType, "SBB") and (self.Reg.Flags & 1) or 0)
-			if dest < (src + borrow) then f = f | 0x0001 end
-			if ((dest ~ src) & (dest ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
+			if d < s then f = f | 0x0001 end
+			-- OF = (dest_msb != src_msb) && (dest_msb != res_msb)
+			if ((d ~ s) & (d ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 		elseif opType == "INC" or opType == "DEC" or opType == "INC8" or opType == "DEC8" then
 			local oldCF = self.Reg.Flags & 0x0001
 			if string.find(opType, "INC") then
-				if ((dest ~ resMasked) & (1 ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
+				if ((d ~ resMasked) & (1 ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 			else
-				if ((dest ~ 1) & (dest ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
+				if ((d ~ 1) & (d ~ resMasked) & msb) ~= 0 then f = f | 0x0800 end
 			end
-			f = (f & 0xFFFE) | oldCF -- INC/DEC는 CF를 유지
+			f = (f & 0xFFFE) | oldCF
 		end
 		
 		self.Reg.Flags = f
@@ -2613,7 +2723,7 @@ end
 			if self.VGA and self.VGA.GraphicsCard then self.VGA.GraphicsCard:ClearScreen() end
 		end
 	end
-	@EventSender("Entity","9bdc201e-fa3a-4452-aed0-654afa5f4ab9")
+	@EventSender("Entity", "9bdc201e-fa3a-4452-aed0-654afa5f4ab9")
 	handler HandleSpeedInput(TextInputEndEditEvent event)
 		self.ProcessorSpeed = tonumber(event.text)
 	end
