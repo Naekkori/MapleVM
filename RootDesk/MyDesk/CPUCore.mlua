@@ -1370,11 +1370,22 @@ script CPUCore extends Component
 			else
 				self.Reg.DX = 0
 			end
+		elseif opcode == 0x9A then -- CALL Far ptr16:16
+			local newOffset = self:FetchWord()
+			local newSegment = self:FetchWord()
+			self:PushStack(self.Reg.CS)
+			self:PushStack(self.Reg.IP)
+			log(string.format("CPU: CALL Far to %04X:%04X", newSegment, newOffset))
+			self.Reg.CS = newSegment
+			self.Reg.IP = newOffset
 		elseif opcode == 0x9C then -- PUSHF
 			self:Push16(self.Reg.Flags)
 		elseif opcode == 0x9D then -- POPF
 			local val = self:PopStack()
 			self.Reg.Flags = math.floor(val or 0) % 0x10000
+		elseif opcode == 0x9F then -- SAHF (Store AH into Flags)
+			local ah = (self.Reg.AX >> 8) & 0xFF
+			self.Reg.Flags = (self.Reg.Flags & 0xFF00) | (ah & 0xD5) | 0x02
 		elseif opcode == 0xA0 then -- MOV AL, moffs8
 			local offset = self:FetchWord()
 			local addr = (self.Reg.DS << 4) + offset
