@@ -259,7 +259,7 @@ script CPUCore extends Component
 	-- 스택에 16비트 값 푸시 (기존 Push16이 없다면 추가)
 	method void Push16(number val)
 		self.Reg.SP = (self.Reg.SP - 2) & 0xFFFF
-		local physicalAddr = (self.Reg.SS << 4) + self.Reg.SP
+		local physicalAddr = ((self.Reg.SS << 4) + self.Reg.SP) & 0xFFFFF
 		self:WriteByte(physicalAddr, val & 0xFF)
 		self:WriteByte(physicalAddr + 1, (val >> 8) & 0xFF)
 	end
@@ -350,7 +350,7 @@ script CPUCore extends Component
 				
 				self.Reg.Flags = self.Reg.Flags & (~1) -- CF = 0
 				self.Reg.AX = (self.Reg.AX & 0x0000) | (al & 0xFF) -- AL에 읽은 섹터 수 유지
-				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0000 -- AH=0
+				self.Reg.AX = (al & 0xFF) -- AH=0
 			else
 				self.Reg.Flags = self.Reg.Flags | 1 -- 실패 시 CF = 1
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100 -- AH = 01h (에러)
@@ -410,33 +410,35 @@ script CPUCore extends Component
 		end
 	end
 	
-	method void HandleBootInterrupt()
-		local fdd = self.FDD.FloppyDrive
-		-- 첫 번째 섹터 읽기 시도
-		local success = fdd:ReadSectors(0, 0, 1, 1, 0x0000, 0x7C00)
-		
-		if success then
-			-- 커널 로드 후 전체 섹터 덤프 (데이터 구조 상세 분석)
-			local dump = ""
-			for i = 0, 511 do
-				dump = dump .. string.format("%02X", self:ReadByte(0x90200 + i))
-			end
-			log("CPU: FULL Kernel Header Dump: " .. dump)
-			
-			log("CPU: Booting... Jumping to 0000:7C00")
-			-- 부트로더 에게 드라이브 번호 (0x00 플로피) 전달
-			self.Reg.DX = (self.Reg.DX & 0xFF00) | 0x00
-			self.Reg.CS = 0x0000
-			self.Reg.IP = 0x7C00
-			-- Carry Flag 해제 (성공)
-			self.Reg.Flags = self.Reg.Flags & ~0x0001
-		else
-			-- Carry Flag 설정 (실패 -> BIOS가 jc로 인식)
-			self.Reg.Flags = self.Reg.Flags | 0x0001
-			log("Disk: Boot sector not found or drive not ready. Returning to BIOS.")
-		end
-		
-	end
+method void HandleBootInterrupt()
+    local fdd = self.FDD.FloppyDrive
+    local bootSegment = 0x0000
+    local bootOffset = 0x7C00
+    -- 물리 주소 계산: (0 << 4) + 0x7C00 = 0x07C00
+    local targetPhysAddr = (bootSegment << 4) + bootOffset 
+
+    -- 1. 첫 번째 섹터를 정확한 위치에 로드
+    local success = fdd:ReadSectors(0, 0, 1, 1, bootSegment, bootOffset)
+    
+    if success then
+        -- 2. 덤프 주소를 로드한 주소(0x07C00)와 일치시킴
+        local dump = ""
+        for i = 0, 511 do
+            dump = dump .. string.format("%02X", self:ReadByte(targetPhysAddr + i))
+        end
+        log("CPU: FULL Kernel Header Dump (at 0x7C00): " .. dump)
+        
+        log("CPU: Booting... Jumping to 0000:7C00")
+        
+        self.Reg.DX = (self.Reg.DX & 0xFF00) | 0x00
+        self.Reg.CS = bootSegment
+        self.Reg.IP = bootOffset
+        self.Reg.Flags = self.Reg.Flags & ~0x0001
+    else
+        self.Reg.Flags = self.Reg.Flags | 0x0001
+        log("Disk: Boot sector error.")
+    end
+end
 	
 	method void HandleSoundDevice(number port, number val)
 		local sound = self.Speaker.SoundComponent
