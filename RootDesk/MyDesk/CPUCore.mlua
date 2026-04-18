@@ -1451,6 +1451,12 @@ script CPUCore extends Component
 			local res = al & imm
 			self:UpdateFlags("LOGIC8", al, imm, res)
 			
+		elseif opcode == 0xA9 then -- TEST AX, imm16
+			local imm16 = self:FetchWord()
+			local ax = self.Reg.AX
+			local res = ax & imm16
+			self:UpdateFlags("LOGIC", ax, imm16, res)
+
 		elseif opcode == 0xAA then -- STOSB
 			local df = (self.Reg.Flags & 0x0400) ~= 0
 			local dst = ((self.Reg.ES << 4) + self.Reg.DI) & 0xFFFFF
