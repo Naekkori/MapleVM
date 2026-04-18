@@ -142,7 +142,7 @@ script FloppyDrive extends Component
 			log_warning("Disk: Device not ready (Performing Self-Test)")
 			return false
 		end
-		log(string.format("DISK IO: Request C:%d H:%d S:%d Count:%d", c, h, s, count))
+		-- log(string.format("DISK IO: Request C:%d H:%d S:%d Count:%d", c, h, s, count))
 		if s < 1 then
 			log_warning("DISK: Invalid sector " .. s .. " request, Adjusting 1")
 			s = 1
@@ -163,7 +163,7 @@ script FloppyDrive extends Component
 		local cpu = self.CPU.CPUCore
 		local baseDestAddr = ((es << 4) + bx) & 0xFFFFF
 		
-		log(string.format("DISK IO: LBA: %d, Count: %d, ES: %04X, BX: %04X (Addr: %05X)", startLba, count, es, bx, baseDestAddr))
+		-- log(string.format("DISK IO: LBA: %d, Count: %d, ES: %04X, BX: %04X (Addr: %05X)", startLba, count, es, bx, baseDestAddr))
 		
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
@@ -179,7 +179,7 @@ script FloppyDrive extends Component
 				log("!!! SUCCESS: Found Kernel Header at adjusted LBA: " .. currentLba)
 			end
 			local preview = string.sub(hexData, 1, 32)
-			log(string.format("DISK IO: LBA %d Data: %s", currentLba, preview))
+			-- log(string.format("DISK IO: LBA %d Data: %s", currentLba, preview))
 			
 			local sectorOffset = i * 512
 			for j = 0, 511 do
@@ -189,15 +189,15 @@ script FloppyDrive extends Component
 				local destAddr = (baseDestAddr + sectorOffset + j) & 0xFFFFF
 				
 				-- SYSSEG(0x1000:0000 -> 0x10000) 근처에 데이터가 쓰일 때 로그 출력
-				if destAddr >= 0x10000 and destAddr < 0x10004 then
-					log(string.format("DISK IO: Write %02X at %05X", byteVal, destAddr))
-				end
+				-- if destAddr >= 0x10000 and destAddr < 0x10004 then
+				-- 	log(string.format("DISK IO: Write %02X at %05X", byteVal, destAddr))
+				-- end
 				
 				cpu:WriteByte(destAddr, byteVal)
 			end
 		end
 		
-		log(string.format("DISK IO: Done. LBA %d to %d copied to %04X:%04X", startLba, startLba + count - 1, es, bx))
+		-- log(string.format("DISK IO: Done. LBA %d to %d copied to %04X:%04X", startLba, startLba + count - 1, es, bx))
 		return true
 	end
 	

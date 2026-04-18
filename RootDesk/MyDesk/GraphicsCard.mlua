@@ -77,7 +77,7 @@ script GraphicsCard extends Component
 				-- row를 1부터 16까지 한꺼번에 처리할 큐 생성
 				table.insert(self.RenderQueue, {code = charCode, x = drawX, y = startY, row = 1})
 				-- DEBUG
-				log(string.format("DrawString: Char: %d, X: %d, Y: %d", charCode, startX, startY))
+				-- log(string.format("DrawString: Char: %d, X: %d, Y: %d", charCode, startX, startY))
 				self.VRAM[vramKey] = charCode
 			end
 		end

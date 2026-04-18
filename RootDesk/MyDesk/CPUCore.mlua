@@ -3,7 +3,7 @@ script CPUCore extends Component
 	--[[
 	Maple VM 8086 Vitual Machine Engine
 	]]
-	property number ProcessorSpeed = 80
+	property number ProcessorSpeed = 1000000
 	property Entity BIOS_Entity = "d98c8307-fdd4-4052-ad76-d4bb6da31f72"
 	
 	property Entity VGA = "6f033c67-5e1a-4e95-a098-72f48567f671"
@@ -162,6 +162,11 @@ script CPUCore extends Component
 				-- 인터럽트 승인 (IRR -> ISR)
 				pic:AcknowledgeInterrupt(irq)
 				
+				-- 타이머(IRQ 0)를 제외한 하드웨어 인터럽트 로그 출력
+				if irq ~= 0 then
+					log(string.format("CPU: HW Interrupt IRQ %d triggered", irq))
+				end
+				
 				-- HALT 상태면 깨우기
 				if self.State == "HALT" then
 					self.State = "RUNNING"
@@ -175,6 +180,11 @@ script CPUCore extends Component
 	end
 	-- 인터럽트 실행 (인터럽트 번호 vector 전달)
 	method void ExecuteInterrupt(number vector)
+		-- 타이머(08h/1Ch), 비디오(10h), 키보드(16h), 디스크(13h)를 제외한 나머지 인터럽트 로그 출력
+		if vector ~= 0x08 and vector ~= 0x1C and vector ~= 0x10 and vector ~= 0x16 and vector ~= 0x13 then
+			-- log(string.format("CPU: Interrupt INT %02Xh called", vector))
+		end
+		
 		-- 1. IVT(Interrupt Vector Table)에서 주소 미리 읽기 및 유효성 체크
 		local baseAddr = vector * 4
 		local newIP = self:ReadWord(baseAddr)
@@ -202,15 +212,15 @@ script CPUCore extends Component
 				handledByHLE = true
 			elseif vector == 0x15 then
 				-- INT 15h (System Services) - ELKS 커널이 메모리 맵 확인용으로 자주 호출
-				-- 일단 AH=88h (Get Extended Memory Size) 등에 대해 0을 반환하도록 더미 처리
 				local ah = (self.Reg.AX >> 8) & 0xFF
 				if ah == 0x88 then
 					self.Reg.AX = 0 -- 확장 메모리 없음
 					self.Reg.Flags = self.Reg.Flags & ~0x0001 -- CF=0 (성공)
+					handledByHLE = true
 				elseif ah == 0xC0 then
 					self.Reg.Flags = self.Reg.Flags | 0x0001 -- CF=1 (지원하지 않음)
+					handledByHLE = true
 				end
-				handledByHLE = true
 			elseif vector == 0x16 then
 				self:HandleKeyboardInterrupt()
 				handledByHLE = true
@@ -330,7 +340,7 @@ script CPUCore extends Component
 			if self.FDD and self.FDD.FloppyDrive then
 				self.FDD.FloppyDrive.IsReady = true
 				self.FDD.FloppyDrive.Status = "Ready"
-				log("BIOS: INT 13h Reset Disk System")
+				-- log("BIOS: INT 13h Reset Disk System")
 			end
 			self.Reg.Flags = self.Reg.Flags & (~1) -- CF = 0
 			self.Reg.AX = (self.Reg.AX & 0x00FF) -- AH=0
@@ -346,7 +356,7 @@ script CPUCore extends Component
 				for i = 0, 15 do
 					dump = dump .. string.format("%02X", self:ReadByte(baseAddr + i))
 				end
-				log(string.format("BIOS: INT 13h Success, AL=%d, Target=%05X, Data=%s", al, baseAddr, dump))
+				-- log(string.format("BIOS: INT 13h Success, AL=%d, Target=%05X, Data=%s", al, baseAddr, dump))
 				
 				self.Reg.Flags = self.Reg.Flags & (~1) -- CF = 0
 				self.Reg.AX = (self.Reg.AX & 0x0000) | (al & 0xFF) -- AL에 읽은 섹터 수 유지
@@ -438,7 +448,7 @@ script CPUCore extends Component
 			for i = 0, 511 do
 				dump = dump .. string.format("%02X", self:ReadByte(targetPhysAddr + i))
 			end
-			log("CPU: FULL Kernel Header Dump (at 0x7C00): " .. dump)
+			-- log("CPU: FULL Kernel Header Dump (at 0x7C00): " .. dump)
 			
 			log("CPU: Booting... Jumping to 0000:7C00")
 			
@@ -478,7 +488,7 @@ script CPUCore extends Component
 		local opcode = self:FetchByte()
 		--[[ 부트로더(7C00 이후) 동작 중 상세 로그
 		if (self.Reg.CS == 0 and self.Reg.IP > 0x7C00) or self.Reg.CS == 0xF000 then
-		log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
+		-- log(string.format("DEBUG: Op %02X at %04X:%04X | AX:%04X CX:%04X DX:%04X",
 		opcode, self.Reg.CS, self.Reg.IP - 1, self.Reg.AX, self.Reg.CX, self.Reg.DX))
 		end
 		--]]
@@ -1472,7 +1482,7 @@ script CPUCore extends Component
 			local newSegment = self:FetchWord()
 			self:PushStack(self.Reg.CS)
 			self:PushStack(self.Reg.IP)
-			log(string.format("CPU: CALL Far to %04X:%04X", newSegment, newOffset))
+			-- log(string.format("CPU: CALL Far to %04X:%04X", newSegment, newOffset))
 			self.Reg.CS = newSegment
 			self.Reg.IP = newOffset
 		elseif opcode == 0x9C then -- PUSHF
@@ -1633,7 +1643,7 @@ script CPUCore extends Component
 			-- 레지스터 와 세그먼트 에 각각 할당
 			self:SetRegister16(reg, offset)
 			self.Reg.DS = segment
-			log(string.format("LDS: Set Reg[%d]=%04X, DS=%04X", reg, offset, segment))
+			-- log(string.format("LDS: Set Reg[%d]=%04X, DS=%04X", reg, offset, segment))
 		elseif opcode == 0xC6 then
 			local modRM = self:FetchByte()
 			local mod, reg, rm = self:DecodeModRM(modRM)
@@ -1960,9 +1970,9 @@ script CPUCore extends Component
 			for k = 0, 15 do
 				table.insert(entryData, string.format("%02X", self:ReadByte(addr + k)))
 			end
-			log("CPU: Jump Target Data (" .. string.format("%04X:%04X", newCS, newIP) .. "): " .. table.concat(entryData, " "))
+			-- log("CPU: Jump Target Data (" .. string.format("%04X:%04X", newCS, newIP) .. "): " .. table.concat(entryData, " "))
 			
-			log(string.format("CPU: JMP Far to %04X:%04X", newCS, newIP))
+			-- log(string.format("CPU: JMP Far to %04X:%04X", newCS, newIP))
 			self.Reg.IP = newIP
 			self.Reg.CS = newCS
 			
@@ -2081,7 +2091,7 @@ script CPUCore extends Component
 			
 		elseif opcode == 0xF4 then -- HLT
 			self.State = "HALT"
-			log("CPU: Halted.")
+			-- log("CPU: Halted.")
 		elseif opcode == 0xF5 then -- CMC (Complement Carry Flag)
 			self.Reg.Flags = self.Reg.Flags ~ 0x0001
 			
@@ -2335,7 +2345,7 @@ script CPUCore extends Component
 		
 		if self.lastDebugState ~= currentPrint then
 		-- 주소값이 연속적이지 않거나(JMP/CALL), 레지스터 값이 변했을 때만 출력
-		log(string.format("[%04X:%04X] %s", regs.CS, regs.IP, currentPrint))
+		-- log(string.format("[%04X:%04X] %s", regs.CS, regs.IP, currentPrint))
 		self.lastDebugState = currentPrint
 		end
 		--]]
@@ -2356,26 +2366,12 @@ script CPUCore extends Component
 	end
 	
 	method number ReadPort(number port)
-		-- 1. 디스크 컨트롤러 (0x1F0 - 0x1F7)
-		if port >= 0x1F0 and port <= 0x1F7 then
-			return self.FDD and self.FDD.FloppyDrive:OnReadPort(port) or 0xFF
-			
-			-- 2. PIC (0x20, 0x21)
-		elseif port == 0x20 or port == 0x21 then
-			return self.PIC and self.PIC.PIC8259:Read(port) or 0
-			
-			-- 3. 키보드 컨트롤러 (0x60, 0x64)
-		elseif port == 0x60 or port == 0x64 then
-			-- 키보드 데이터/상태 읽기
-			return 0x00
-		end
-		
-		return 0xFF
+		return self:ReadPort8(port)
 	end
 	
 	method void WritePort(number port, number val)
-		-- 1. 디스크 컨트롤러 (0x1F0 - 0x1F7)
-		if port >= 0x1F0 and port <= 0x1F7 then
+		-- 1. 디스크 컨트롤러 (0x1F0 - 0x1F7 / 0x3F0 - 0x3F7)
+		if (port >= 0x1F0 and port <= 0x1F7) or (port >= 0x3F0 and port <= 0x3F7) then
 			if self.FDD then self.FDD.FloppyDrive:OnWritePort(port, val) end
 			
 			-- 2. VGA 컨트롤러 (0x3D4, 0x3D5)
@@ -2387,15 +2383,27 @@ script CPUCore extends Component
 			if self.PIC then
 				self.PIC.PIC8259:Write(port, val)
 			end
-			-- 4. 커스텀 사운드 (기존 로직)
+			-- 4. 키보드 컨트롤러 (0x60, 0x64) - Dummy for A20/Reset
+		elseif port == 0x60 or port == 0x64 then
+			-- log(string.format("KBD: Port %02X Write %02X", port, val))
+			
+			-- 5. 커스텀 사운드 (기존 로직)
 		elseif port >= 0x400 and port <= 0x404 then
 			self:HandleSoundDevice(port, val)
 		end
 	end
 	
 	method number ReadPort8(number port)
-		if port >= 0x1F0 and port <= 0x1F7 then
+		if (port >= 0x1F0 and port <= 0x1F7) or (port >= 0x3F0 and port <= 0x3F7) then
+			-- FDC 상태 포트 (0x3F4 - PC Standard)
+			if port == 0x3F4 then
+				-- Bit 7: RQM (Request for Master) - Ready
+				-- Bit 6: DIO (Data I/O Direction) - 0: CPU to Controller
+				return 0x80
+			end
 			if self.FDD then return self.FDD.FloppyDrive:OnReadPort(port) end
+		elseif port == 0x20 or port == 0x21 then
+			return self.PIC and self.PIC.PIC8259:Read(port) or 0
 		elseif port == 0x3D4 or port == 0x3D5 or port == 0x3DA then
 			if self.VGA then return self.VGA.GraphicsCard:OnReadPort(port) end
 		elseif port == 0x60 or port == 0x64 then
@@ -2416,12 +2424,14 @@ script CPUCore extends Component
 	method number HandleKeyboardPort(number port)
 		if port == 0x60 then -- Data Port
 			local code = self.lastKeycode
-			-- 읽은 후에는 보통 초기화하거나 버퍼의 다음 값을 준비함
 			-- self.lastKeycode = 0
 			return code
 		elseif port == 0x64 then -- Status Register
-			-- bit 0: Output buffer full (1이면 0x60에서 읽을 데이터가 있음)
-			return self.lastKeycode ~= 0 and 1 or 0
+			local status = 0x02 -- Bit 1: Input Buffer Empty (Always 1 for dummy)
+			if self.lastKeycode ~= 0 then
+				status = status | 0x01 -- Bit 0: Output Buffer Full
+			end
+			return status
 		end
 		return 0
 	end
@@ -2580,19 +2590,24 @@ script CPUCore extends Component
 	method void ExecuteBatch()
 		if self.State == "STOP" then return end
 		local startTime = os.clock()
-		local timeLimit = 0.01 -- 10ms 타임 슬라이스
+		local timeLimit = 0.02 -- 20ms 타임 슬라이스
 		
 		for i = 1, self.ProcessorSpeed do
-			self:HandleHardwareInterrupts()
+			-- 성능 최적화: 100번에 한 번씩만 시스템 체크
+			if i % 100 == 0 then
+				self:HandleHardwareInterrupts()
+				if self.State ~= "RUNNING" then break end
+				
+				if os.clock() - startTime > timeLimit then
+					break
+				end
+			end
+			
 			if self.State == "RUNNING" then
 				self:Step()
 			elseif self.State == "HALT" then
-				break -- HALT 상태면 다음 프레임까지 대기 (인터럽트 발생 시 깨어남)
-			else
 				break
-			end
-			-- 타임 슬라이스 체크
-			if os.clock() - startTime > timeLimit then
+			else
 				break
 			end
 		end
@@ -2615,6 +2630,8 @@ script CPUCore extends Component
 			self:RaiseHardwareInterrupt(0)
 			self.TimerAccumulator = self.TimerAccumulator - 0.054925
 		end
+		
+		self:HandleHardwareInterrupts()
 		self:ExecuteBatch()
 	end
 	
