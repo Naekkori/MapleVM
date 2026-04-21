@@ -76,7 +76,7 @@ script GraphicsCard extends Component
 			if self.VRAM[vramKey] ~= charCode then
 				-- row를 1부터 16까지 한꺼번에 처리할 큐 생성
 				table.insert(self.RenderQueue, {code = charCode, x = drawX, y = startY, row = 1})
-				log(string.format("DrawString: Char: %d(%s), X: %d, Y: %d", charCode, string.char(charCode > 31 and charCode or 63), startX, startY))
+				-- log(string.format("DrawString: Char: %d(%s), X: %d, Y: %d", charCode, string.char(charCode > 31 and charCode or 63), startX, startY))
 				self.VRAM[vramKey] = charCode
 			end
 		end
@@ -92,7 +92,7 @@ script GraphicsCard extends Component
 		-- ✅ 1. 시분할로 버퍼 채우기
 		-- 렉을 안 걸리게 하면서도 최대한 많이 처리 (행 단위 32개 정도면 안전)
 		local processedRows = 0
-		local maxRowsPerFrame = 512
+		local maxRowsPerFrame = 2084
 		
 		while #self.RenderQueue > 0 and processedRows < maxRowsPerFrame do
 			local job = table.remove(self.RenderQueue, 1)

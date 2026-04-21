@@ -91,7 +91,31 @@ script CPUCore extends Component
 			["LeftBracket"] = 0x1A,
 			["RightBracket"] = 0x1B,
 			["Backslash"] = 0x2B,
-			["BackQuote"] = 0x29
+			["BackQuote"] = 0x29,
+			-- Shift / Ctrl / Alt 키 (BDA 상태 플래그용)
+			["LeftShift"] = 0x2A,
+			["RightShift"] = 0x36,
+			["LeftControl"] = 0x1D,
+			["RightControl"] = 0x1D,
+			["LeftAlt"] = 0x38,
+			["RightAlt"] = 0x38,
+			-- 기능 키
+			["Tab"] = 0x0F,
+			["CapsLock"] = 0x3A,
+			["F1"] = 0x3B, ["F2"] = 0x3C, ["F3"] = 0x3D, ["F4"] = 0x3E,
+			["F5"] = 0x3F, ["F6"] = 0x40, ["F7"] = 0x41, ["F8"] = 0x42,
+			["F9"] = 0x43, ["F10"] = 0x44,
+			-- 화살표 키 (확장 스캔코드)
+			["UpArrow"] = 0x48,
+			["DownArrow"] = 0x50,
+			["LeftArrow"] = 0x4B,
+			["RightArrow"] = 0x4D,
+			["Delete"] = 0x53,
+			["Insert"] = 0x52,
+			["Home"] = 0x47,
+			["End"] = 0x4F,
+			["PageUp"] = 0x49,
+			["PageDown"] = 0x51
 		}
 		
 		for keyName, scancode in pairs(specialKeys) do
@@ -3047,6 +3071,21 @@ script CPUCore extends Component
 			if self.State == "HALT" then self.State = "RUNNING" end
 		end
 		
+		-- BDA 0x417: 키보드 상태 바이트 업데이트 (Shift/Ctrl/Alt 상태)
+		-- ELKS 커널이 이 값을 읽어 특수문자/대문자 여부를 판단함
+		local bdaStatus = self:ReadByte(0x417)
+		local k = event.key
+		if k == KeyboardKey.LeftShift then
+			bdaStatus = bdaStatus | 0x02 -- bit1: Left Shift
+		elseif k == KeyboardKey.RightShift then
+			bdaStatus = bdaStatus | 0x01 -- bit0: Right Shift
+		elseif k == KeyboardKey.LeftControl or k == KeyboardKey.RightControl then
+			bdaStatus = bdaStatus | 0x04 -- bit2: Ctrl
+		elseif k == KeyboardKey.LeftAlt or k == KeyboardKey.RightAlt then
+			bdaStatus = bdaStatus | 0x08 -- bit3: Alt
+		end
+		self:WriteByte(0x417, bdaStatus)
+		
 		local isCtrl = _InputService:IsKeyPressed(KeyboardKey.LeftControl) or _InputService:IsKeyPressed(KeyboardKey.RightControl)
 		local isAlt = _InputService:IsKeyPressed(KeyboardKey.LeftAlt) or _InputService:IsKeyPressed(KeyboardKey.RightAlt)
 		if isCtrl and isAlt and _InputService:IsKeyPressed(KeyboardKey.Backspace) then
@@ -3064,6 +3103,20 @@ script CPUCore extends Component
 			self.lastKeycode = scancode | 0x80 -- Break code (Make code + 0x80)
 			self:RaiseHardwareInterrupt(1)
 		end
+		
+		-- BDA 0x417: 키 뗄 때 Shift/Ctrl/Alt 플래그 해제
+		local bdaStatus = self:ReadByte(0x417)
+		local k = event.key
+		if k == KeyboardKey.LeftShift then
+			bdaStatus = bdaStatus & ~0x02
+		elseif k == KeyboardKey.RightShift then
+			bdaStatus = bdaStatus & ~0x01
+		elseif k == KeyboardKey.LeftControl or k == KeyboardKey.RightControl then
+			bdaStatus = bdaStatus & ~0x04
+		elseif k == KeyboardKey.LeftAlt or k == KeyboardKey.RightAlt then
+			bdaStatus = bdaStatus & ~0x08
+		end
+		self:WriteByte(0x417, bdaStatus)
 	end
 	@EventSender("Entity", "9bdc201e-fa3a-4452-aed0-654afa5f4ab9")
 	handler HandleSpeedInput(TextInputEndEditEvent event)
