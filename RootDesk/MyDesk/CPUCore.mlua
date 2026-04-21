@@ -56,9 +56,9 @@ script CPUCore extends Component
 		
 		-- 3. 알파벳 XT 스캔코드 매핑
 		local xtAlphabets = {
-			A=0x1E, B=0x30, C=0x2E, D=0x20, E=0x12, F=0x21, G=0x22, H=0x23, I=0x17,
-			J=0x24, K=0x25, L=0x26, M=0x32, N=0x31, O=0x18, P=0x19, Q=0x10, R=0x13,
-			S=0x1F, T=0x14, U=0x16, V=0x2F, W=0x11, X=0x2D, Y=0x15, Z=0x2C
+			A = 0x1E, B = 0x30, C = 0x2E, D = 0x20, E = 0x12, F = 0x21, G = 0x22, H = 0x23, I = 0x17,
+			J = 0x24, K = 0x25, L = 0x26, M = 0x32, N = 0x31, O = 0x18, P = 0x19, Q = 0x10, R = 0x13,
+			S = 0x1F, T = 0x14, U = 0x16, V = 0x2F, W = 0x11, X = 0x2D, Y = 0x15, Z = 0x2C
 		}
 		for char, scancode in pairs(xtAlphabets) do
 			local keyEnum = KeyboardKey[char]
@@ -133,11 +133,21 @@ script CPUCore extends Component
 		
 		self.Memory[addr] = (value & 0xFF)
 		
-		-- 비디오 메모리 갱신 (B800:0000 ~)
+		-- 비디오 메모리 갱신 (B800:0000 ~ 0xBC000)
 		if addr >= 0xB8000 and addr < 0xBC000 then
 			if self.VGA and self.VGA.GraphicsCard then
-				-- 실제 VGA 하드웨어처럼 VRAM 변경을 통지할 수도 있으나,
-				-- 현재 HLE 방식에서는 필요한 경우에만 처리
+				local offset = addr - 0xB8000
+				if offset % 2 == 0 then -- 문자 데이터 만 처리
+					local charIdx = math.floor(offset / 2)
+					local x = charIdx % 80
+					local y = math.floor(charIdx / 80)
+					local char = string.char(value)
+					
+					local posX = 20 + (x * 8)
+					local posY = 460 - (y * 16)
+					
+					self.VGA.GraphicsCard:DrawString(char, posX, posY)
+				end
 			end
 		end
 	end
@@ -169,17 +179,18 @@ script CPUCore extends Component
 				-- 인터럽트 승인 (IRR -> ISR)
 				pic:AcknowledgeInterrupt(irq)
 				
-				-- 타이머(IRQ 0) 인터럽트 직전 CS:IP 출력 (항상 같은 주소면 거기서 CPU가 멈춰있는 것)
+				--[[ 타이머(IRQ 0) 인터럽트 직전 CS:IP 출력 (항상 같은 주소면 거기서 CPU가 멈춰있는 것)
 				if irq == 0 then
-					log(string.format("CPU: IRQ0(Timer) @ CS:%04X IP:%04X SS:%04X SP:%04X Flags:%04X State:%s",
-						self.Reg.CS, self.Reg.IP, self.Reg.SS, self.Reg.SP, self.Reg.Flags, self.State))
+					-- log(string.format("CPU: IRQ0(Timer) @ CS:%04X IP:%04X SS:%04X SP:%04X Flags:%04X State:%s",
+					-- 	self.Reg.CS, self.Reg.IP, self.Reg.SS, self.Reg.SP, self.Reg.Flags, self.State))
 					-- ELKS 커널 핸들러(19F2:3DB4)로 진입할 경우 ISR 트레이스 활성화 (50 step)
 					if self.timerISRTrace == 0 then
 						self.timerISRTrace = 50
 					end
 				else
-					log(string.format("CPU: HW Interrupt IRQ %d triggered", irq))
+					-- log(string.format("CPU: HW Interrupt IRQ %d triggered", irq))
 				end
+				--]]
 				
 				-- HALT 상태면 깨우기
 				if self.State == "HALT" then
@@ -194,24 +205,34 @@ script CPUCore extends Component
 	end
 	-- 인터럽트 실행 (인터럽트 번호 vector 전달)
 	method void ExecuteInterrupt(number vector)
-		-- 타이머(08h/1Ch), 비디오(10h), 키보드(16h), 디스크(13h)를 제외한 나머지 인터럽트 로그 출력
+		--[[ 타이머(08h/1Ch), 비디오(10h), 키보드(16h), 디스크(13h)를 제외한 나머지 인터럽트 로그 출력
 		if vector ~= 0x08 and vector ~= 0x1C and vector ~= 0x10 and vector ~= 0x16 and vector ~= 0x13 then
-			log(string.format("CPU: Interrupt INT %02Xh called | AX:%04X BX:%04X CX:%04X DX:%04X SI:%04X DI:%04X SP:%04X BP:%04X CS:%04X DS:%04X ES:%04X SS:%04X IP:%04X Flags:%04X",
-				vector,
-				self.Reg.AX, self.Reg.BX, self.Reg.CX, self.Reg.DX,
-				self.Reg.SI, self.Reg.DI, self.Reg.SP, self.Reg.BP,
-				self.Reg.CS, self.Reg.DS, self.Reg.ES, self.Reg.SS,
-				self.Reg.IP, self.Reg.Flags))
+			-- log(string.format("CPU: Interrupt INT %02Xh called | AX:%04X BX:%04X CX:%04X DX:%04X SI:%04X DI:%04X SP:%04X BP:%04X CS:%04X DS:%04X ES:%04X SS:%04X IP:%04X Flags:%04X",
+			-- 	vector,
+			-- 	self.Reg.AX, self.Reg.BX, self.Reg.CX, self.Reg.DX,
+			-- 	self.Reg.SI, self.Reg.DI, self.Reg.SP, self.Reg.BP,
+			-- 	self.Reg.CS, self.Reg.DS, self.Reg.ES, self.Reg.SS,
+			-- 	self.Reg.IP, self.Reg.Flags))
 		end
+		--]]
 		
 		-- 1. IVT(Interrupt Vector Table)에서 주소 미리 읽기 및 유효성 체크
 		local baseAddr = vector * 4
 		local newIP = self:ReadWord(baseAddr)
 		local newCS = self:ReadWord(baseAddr + 2)
-		-- INT 0 디버그: IVT에서 읽은 핸들러 주소 출력
+		-- INT 0 디버그: 어떤 명령어가 오류를 냈는지 확인
 		if vector == 0x00 then
-			log(string.format("INT0 DEBUG: IVT[0] = %04X:%04X (baseAddr=%05X)", newCS, newIP, baseAddr))
+			-- log(string.format("!!! DIVIDE ERROR (INT 0) !!!"))
+			-- log(string.format("At Address -> %04X:%04X", self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF))
+			-- log(string.format("Registers -> AX:%04X DX:%04X BX:%04X CX:%04X", self.Reg.AX, self.Reg.DX, self.Reg.BX, self.Reg.CX))
+			-- log(string.format("IVT[0] Handler -> %04X:%04X", newCS, newIP))
+			
+			-- 만약 IVT[0]이 0000:0000이면 핸들러가 없어서 무한 루프에 빠집니다.
+			if newCS == 0 and newIP == 0 then
+				log_error("CRITICAL: No INT 0 handler defined! CPU will loop forever.")
+			end
 		end
+		
 		
 		-- High Level Emulation 체크
 		-- 만약 인터럽트 벡터가 BIOS 영역(0xF000:xxxx)을 가리키고 있다면 HLE로 가속 처리 가능
@@ -287,7 +308,7 @@ script CPUCore extends Component
 		self.Reg.CS = newCS
 		
 		-- 로그: 디버깅 시 유용
-		log(string.format("CPU: INT %02Xh -> jumped to %04X:%04X (SS:%04X SP:%04X)", vector, newCS, newIP, self.Reg.SS, self.Reg.SP))
+		-- log(string.format("CPU: INT %02Xh -> jumped to %04X:%04X (SS:%04X SP:%04X)", vector, newCS, newIP, self.Reg.SS, self.Reg.SP))
 	end
 	
 	-- 스택에 16비트 값 푸시 (기존 Push16이 없다면 추가)
@@ -512,10 +533,10 @@ script CPUCore extends Component
 		local opcode = self:FetchByte()
 		-- 타이머 ISR 트레이스 (전체 세그먼트 추적)
 		if self.timerISRTrace > 0 then
-			log(string.format("ISR[%02d] %04X:%04X Op:%02X | AX:%04X BX:%04X CX:%04X DX:%04X SI:%04X DI:%04X SP:%04X BP:%04X Flags:%04X",
-				self.timerISRTrace, self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF, opcode,
-				self.Reg.AX, self.Reg.BX, self.Reg.CX, self.Reg.DX,
-				self.Reg.SI, self.Reg.DI, self.Reg.SP, self.Reg.BP, self.Reg.Flags))
+			-- log(string.format("ISR[%02d] %04X:%04X Op:%02X | AX:%04X BX:%04X CX:%04X DX:%04X SI:%04X DI:%04X SP:%04X BP:%04X Flags:%04X",
+			-- 	self.timerISRTrace, self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF, opcode,
+			-- 	self.Reg.AX, self.Reg.BX, self.Reg.CX, self.Reg.DX,
+			-- 	self.Reg.SI, self.Reg.DI, self.Reg.SP, self.Reg.BP, self.Reg.Flags))
 			self.timerISRTrace = self.timerISRTrace - 1
 		end
 		--[[ 부트로더(7C00 이후) 동작 중 상세 로그
@@ -1780,7 +1801,7 @@ script CPUCore extends Component
 			self.Reg.CS = self:PopStack()
 			local fVal = self:PopStack()
 			self.Reg.Flags = math.floor(fVal or 0) % 0x10000
-			log(string.format("IRET at %04X:%04X -> Returned to %04X:%04X (SP:%04X)", oldCS, oldIP, self.Reg.CS, self.Reg.IP, self.Reg.SP))
+			-- log(string.format("IRET at %04X:%04X -> Returned to %04X:%04X (SP:%04X)", oldCS, oldIP, self.Reg.CS, self.Reg.IP, self.Reg.SP))
 			
 		elseif (opcode >= 0xD0 and opcode <= 0xD3) or (opcode == 0xC0 or opcode == 0xC1) then -- Group 2 (Shift/Rotate)
 			local modrm = self:FetchByte()
@@ -2833,15 +2854,20 @@ script CPUCore extends Component
 		return {quot = quot, rem = rem}
 	end
 	method void HandleTimerInterrupt()
-		-- BDA (BIOS Data Area)의 0x0040:0x006C 번지 틱 카운터 증가
-		local low = self:ReadByte(0x46C)
-		local high = self:ReadByte(0x46D)
-		local count = low + (high * 256)
+		-- BDA (BIOS Data Area)의 0x0040:0x006C 번지 틱 카운터 증가 (4바이트 전체 갱신)
+		local addr = 0x46C
+		local low = self:ReadByte(addr)
+		local high = self:ReadByte(addr + 1)
+		local higher = self:ReadByte(addr + 2)
+		local highest = self:ReadByte(addr + 3)
 		
-		count = (count + 1) % 65536
+		local count = low + (high << 8) + (higher << 16) + (highest << 24)
+		count = (count + 1) & 0xFFFFFFFF
 		
-		self:WriteByte(0x46C, count % 256)
-		self:WriteByte(0x46D, math.floor(count / 256))
+		self:WriteByte(addr, count & 0xFF)
+		self:WriteByte(addr + 1, (count >> 8) & 0xFF)
+		self:WriteByte(addr + 2, (count >> 16) & 0xFF)
+		self:WriteByte(addr + 3, (count >> 24) & 0xFF)
 		-- log("CPU: Timer Tick " .. count)
 	end
 	

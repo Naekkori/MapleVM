@@ -93,7 +93,7 @@ script GraphicsCard extends Component
 		-- ✅ 1. 시분할로 버퍼 채우기
 		-- 렉을 안 걸리게 하면서도 최대한 많이 처리 (행 단위 32개 정도면 안전)
 		local processedRows = 0
-		local maxRowsPerFrame = 32
+		local maxRowsPerFrame = 512
 		
 		while #self.RenderQueue > 0 and processedRows < maxRowsPerFrame do
 			local job = table.remove(self.RenderQueue, 1)
