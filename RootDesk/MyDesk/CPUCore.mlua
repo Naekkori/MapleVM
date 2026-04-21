@@ -389,7 +389,7 @@ script CPUCore extends Component
 					-- VRAM 메모리 동기화 (게스트 OS 호환성용)
 					local vramAddr = 0xB8000 + (gCard.CursorY * 80 + gCard.CursorX) * 2
 					self.Memory[vramAddr] = al
-					self.Memory[vramAddr + 1] = bl -- 속성값 (BL)
+					self.Memory[vramAddr + 1] = self.Reg.BX & 0xFF -- 속성값 (BL 레지스터)
 					
 					gCard.CursorX = gCard.CursorX + 1
 					if gCard.CursorX >= 80 then
