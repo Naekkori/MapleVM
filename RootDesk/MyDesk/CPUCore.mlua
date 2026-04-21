@@ -3,7 +3,7 @@ script CPUCore extends Component
 	--[[
 	Maple VM 8086 Vitual Machine Engine
 	]]
-	property number ProcessorSpeed = 1000000
+	property number ProcessorSpeed = 16000
 	property Entity BIOS_Entity = "d98c8307-fdd4-4052-ad76-d4bb6da31f72"
 	
 	property Entity VGA = "6f033c67-5e1a-4e95-a098-72f48567f671"
