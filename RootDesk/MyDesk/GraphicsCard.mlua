@@ -76,8 +76,7 @@ script GraphicsCard extends Component
 			if self.VRAM[vramKey] ~= charCode then
 				-- row를 1부터 16까지 한꺼번에 처리할 큐 생성
 				table.insert(self.RenderQueue, {code = charCode, x = drawX, y = startY, row = 1})
-				-- DEBUG
-				-- log(string.format("DrawString: Char: %d, X: %d, Y: %d", charCode, startX, startY))
+				log(string.format("DrawString: Char: %d(%s), X: %d, Y: %d", charCode, string.char(charCode > 31 and charCode or 63), startX, startY))
 				self.VRAM[vramKey] = charCode
 			end
 		end
@@ -141,27 +140,38 @@ script GraphicsCard extends Component
 		if pixelRenderer then pixelRenderer:FillColor(Color.black) end
 		self.VRAM = {}
 		self.RenderQueue = {}
-		-- 프레임버퍼도 한 번에 초기화 (MSW에서 30만개 루프는 프레임당 1회는 허용될 수 있으나 부하를 줄임)
+		
+		-- 프레임버퍼 초기화 (잔상 제거)
+		local totalPixels = self.ScreenWidth * self.ScreenHeight
+		for i = 1, totalPixels do
+			self.FrameBuffer[i] = Color.black
+		end
+		
+		-- 커서 초기화
+		self.CursorX = 0
+		self.CursorY = 0
+		self.CursorLocation = 0
+		
 		self.IsDirty = true
 	end
 	
 	method void ScrollUP()
 		local lineHeight = 16
-		local pixelShift = lineHeight + self.ScreenWidth
+		local pixelShift = lineHeight * self.ScreenWidth
 		local totalPixels = self.ScreenWidth * self.ScreenHeight
 		
-		-- 윗쪽으로 픽셀복사
-		table.move(self.FrameBuffer, pixelShift + 1, totalPixels, 1)
+		-- ✅ 윗쪽으로 픽셀복사 (인덱스가 커지는 방향이 화면 위쪽)
+		table.move(self.FrameBuffer, 1, totalPixels - pixelShift, pixelShift + 1)
 		
-		-- 맨 아랫쪽에 생긴 빈 공간 을 검은색 으로 채우기
-		for i = totalPixels - pixelShift + 1, totalPixels do
+		-- ✅ 맨 아랫쪽에 생긴 빈 공간을 검은색으로 채우기
+		for i = 1, pixelShift do
 			self.FrameBuffer[i] = Color.black
 		end
-		-- Vram 초기화
-		self.VRAM = {}
 		
-		-- 즉시 화면 예약
+		-- VRAM 캐시 초기화
+		self.VRAM = {}
 		self.IsDirty = true
+		log("GraphicsCard: Scrolled UP (Bottom cleared)")
 	end
 	
 	method void OnWritePort(number port, number val)

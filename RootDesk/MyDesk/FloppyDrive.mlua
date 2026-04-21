@@ -207,15 +207,13 @@ script FloppyDrive extends Component
 		local baseAddr = ((es << 4) + bx) & 0xFFFFF
 		for i = 0, count - 1 do
 			local currentLba = startLba + i
-			local dataStr = ""
+			local sectorData = {}
 			local sectorOffset = i * 512
-			
 			for j = 0, 511 do
 				local srcAddr = (baseAddr + sectorOffset + j) & 0xFFFFF
-				local byteVal = cpu:ReadByte(srcAddr)
-				dataStr = dataStr .. string.format("%02X", byteVal)
+				table.insert(sectorData, cpu:ReadByte(srcAddr))
 			end
-			self.HDDImage[currentLba] = dataStr
+			self.HDDImage[currentLba] = sectorData
 		end
 		
 		log(string.format("FDD: Write %d sectors (LBA: %d)", count, startLba))

@@ -222,10 +222,11 @@ script CPUCore extends Component
 		local newCS = self:ReadWord(baseAddr + 2)
 		-- INT 0 디버그: 어떤 명령어가 오류를 냈는지 확인
 		if vector == 0x00 then
-			-- log(string.format("!!! DIVIDE ERROR (INT 0) !!!"))
-			-- log(string.format("At Address -> %04X:%04X", self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF))
-			-- log(string.format("Registers -> AX:%04X DX:%04X BX:%04X CX:%04X", self.Reg.AX, self.Reg.DX, self.Reg.BX, self.Reg.CX))
-			-- log(string.format("IVT[0] Handler -> %04X:%04X", newCS, newIP))
+			log(string.format("!!! INT 0 TRIGGERED !!!"))
+			log(string.format("At Address -> %04X:%04X", self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF))
+			log(string.format("Registers -> AX:%04X BX:%04X CX:%04X DX:%04X", self.Reg.AX, self.Reg.BX, self.Reg.CX, self.Reg.DX))
+			log(string.format("Segments  -> CS:%04X DS:%04X ES:%04X SS:%04X SP:%04X", self.Reg.CS, self.Reg.DS, self.Reg.ES, self.Reg.SS, self.Reg.SP))
+			log(string.format("IVT[0] Handler -> %04X:%04X", newCS, newIP))
 			
 			-- 만약 IVT[0]이 0000:0000이면 핸들러가 없어서 무한 루프에 빠집니다.
 			if newCS == 0 and newIP == 0 then
@@ -326,44 +327,127 @@ script CPUCore extends Component
 		local dl = self.Reg.DX & 0xFF
 		
 		if ah == 0x0E then -- tty 모드
-			-- 제어문자
-			if al == 0x0D then
-				self.VGA.GraphicsCard.CursorX = 0
-				return
-			elseif al == 0x0A then
-				self.VGA.GraphicsCard.CursorY = self.VGA.GraphicsCard.CursorY + 1
-				return
-			elseif al == 0x08 then
-				self.VGA.GraphicsCard.CursorX = math.max(0, self.VGA.GraphicsCard.CursorX - 1)
-				return
-			end
+			local gCard = self.VGA.GraphicsCard
+			if not gCard then return end
 			
-			if al >= 32 then
-				local char = string.char(al)
-				if self.VGA and self.VGA.GraphicsCard then
-					local posX = 20 + (self.VGA.GraphicsCard.CursorX * 8)
-					local posY = 460 - (self.VGA.GraphicsCard.CursorY * 16)
-					self.VGA.GraphicsCard:DrawString(char, posX, posY)
+			-- 제어문자 처리
+			if al == 0x0D then -- CR (Carriage Return)
+				gCard.CursorX = 0
+			elseif al == 0x0A then -- LF (Line Feed)
+				gCard.CursorY = gCard.CursorY + 1
+			elseif al == 0x08 then -- BS (Backspace)
+				gCard.CursorX = math.max(0, gCard.CursorX - 1)
+			elseif al >= 32 then -- 일반 문자
+				-- 스크롤 체크: 25행을 넘어가면 스크롤 수행
+				if gCard.CursorY >= 25 then
+					gCard:ScrollUP()
+					gCard.CursorY = 24
 				end
 				
-				self.VGA.GraphicsCard.CursorX = self.VGA.GraphicsCard.CursorX + 1
-				if self.VGA.GraphicsCard.CursorX >= 80 then
-					self.VGA.GraphicsCard.CursorX = 0
-					self.VGA.GraphicsCard.CursorY = self.VGA.GraphicsCard.CursorY + 1
+				-- 특수 문자 처리 (CR, LF, BS)
+				if al == 0x0D then -- CR
+					gCard.CursorX = 0
+				elseif al == 0x0A then -- LF
+					gCard.CursorY = gCard.CursorY + 1
+				elseif al == 0x08 then -- BS
+					if gCard.CursorX > 0 then
+						gCard.CursorX = gCard.CursorX - 1
+					end
+				else
+					-- 일반 문자 출력
+					local char = string.char(al)
+					local posX = 20 + (gCard.CursorX * 8)
+					local posY = 460 - (gCard.CursorY * 16)
+					
+					-- 화면에 그리기
+					gCard:DrawString(char, posX, posY)
+					
+					-- VRAM 메모리 동기화 (게스트 OS 호환성용)
+					local vramAddr = 0xB8000 + (gCard.CursorY * 80 + gCard.CursorX) * 2
+					self.Memory[vramAddr] = al
+					self.Memory[vramAddr + 1] = bl -- 속성값 (BL)
+					
+					gCard.CursorX = gCard.CursorX + 1
+					if gCard.CursorX >= 80 then
+						gCard.CursorX = 0
+						gCard.CursorY = gCard.CursorY + 1
+					end
+				end
+				
+				-- 갱신 후 스크롤 체크
+				if gCard.CursorY >= 25 then
+					gCard:ScrollUP()
+					gCard.CursorY = 24
+					
+					-- VRAM 메모리도 실제 로 스크롤 (Guest Direct Access 대응)
+					-- 0xB80A0 (Row 1) -> 0xB8000 (Row 0)
+					for m = 0, (24 * 80 * 2) - 1 do
+						self.Memory[0xB8000 + m] = self.Memory[0xB8000 + 160 + m] or 0
+					end
+					-- 마지막 줄 지우기
+					for m = 0, 159 do
+						self.Memory[0xB8000 + (24 * 80 * 2) + m] = 0
+					end
 				end
 			end
+			
+			-- BDA (0040:0050) 동기화
+			self:WriteByte(0x450, gCard.CursorX)
+			self:WriteByte(0x451, gCard.CursorY)
+			
 		elseif ah == 0x02 then -- Set Cursor Position
-			self.VGA.GraphicsCard.CursorX = dl
-			self.VGA.GraphicsCard.CursorY = dh
-		elseif ah == 0x03 then -- Get Cursor Position
-			self.Reg.DX = (self.VGA.GraphicsCard.CursorY << 8) | self.VGA.GraphicsCard.CursorX
-			self.Reg.AX = 0 -- 성공
-		elseif ah == 0x06 or ah == 0x00 then -- BIOS의 모드 설정(00h) 및 화면 지우기 지원
-			if self.VGA and self.VGA.GraphicsCard then
-				self.VGA.GraphicsCard:ClearScreen()
+			local gCard = self.VGA.GraphicsCard
+			if gCard then
+				gCard.CursorX = dl
+				gCard.CursorY = dh
+				self:WriteByte(0x450, dl)
+				self:WriteByte(0x451, dh)
 			end
-			self.VGA.GraphicsCard.CursorX = 0
-			self.VGA.GraphicsCard.CursorY = 0
+		elseif ah == 0x03 then -- Get Cursor Position
+			local gCard = self.VGA.GraphicsCard
+			if gCard then
+				self.Reg.DX = (gCard.CursorY << 8) | gCard.CursorX
+				self.Reg.CX = 0x0607 -- 표준 커서 모양 (옵션)
+			end
+		elseif ah == 0x13 then -- Write String
+			local gCard = self.VGA.GraphicsCard
+			if gCard then
+				local al_mode = al & 3
+				local count = self.Reg.CX
+				local row = dh
+				local col = dl
+				local base = ((self.Reg.ES << 4) + self.Reg.BP) & 0xFFFFF
+				
+				for i = 0, count - 1 do
+					local charByte = self:ReadByte(base + i)
+					local char = string.char(charByte)
+					local posX = 20 + (col * 8)
+					local posY = 460 - (row * 16)
+					
+					gCard:DrawString(char, posX, posY)
+					
+					col = col + 1
+					if col >= 80 then
+						col = 0
+						row = row + 1
+					end
+				end
+				
+				-- 모드 1이면 커서 위치 업데이트
+				if (al_mode & 1) ~= 0 then
+					gCard.CursorX = col
+					gCard.CursorY = row
+					self:WriteByte(0x450, col)
+					self:WriteByte(0x451, row)
+				end
+			end
+		elseif ah == 0x06 or ah == 0x00 then -- BIOS의 모드 설정(00h) 및 화면 지우기 지원
+			local gCard = self.VGA.GraphicsCard
+			if gCard then
+				gCard:ClearScreen()
+				self:WriteByte(0x450, 0)
+				self:WriteByte(0x451, 0)
+			end
 		end
 	end
 	
@@ -430,9 +514,12 @@ script CPUCore extends Component
 				self.Reg.BX = 0x0004 -- BL=04h (1.44MB Floppy)
 				self.Reg.CX = (79 << 8) | 18 -- CH=79 (Cylinders-1), CL=18 (Sectors)
 				self.Reg.DX = (1 << 8) | 1 -- DH=1 (Heads-1), DL=1 (Drives)
-				self.Reg.ES = 0xF000
-				self.Reg.DI = 0x0080 -- DPT 주소
-				log(string.format("BIOS: Check FDD BL=%X, CH=%X, CL=%X, DH=%X, DL=%X", self.Reg.BX, self.Reg.CX >> 8, self.Reg.CX & 0xFF, self.Reg.DX >> 8, self.Reg.DX & 0xFF))
+				-- 주의: ES:DI는 DPT 포인터 반환용이지만, 커널이 이후 세그먼트로
+				-- 사용하면 VRAM 접근이 망가지므로 현재 값을 유지
+				-- self.Reg.ES = 0xF000
+				-- self.Reg.DI = 0x0080
+				-- log(string.format("BIOS: Check FDD BL=%X, CH=%X, CL=%X, DH=%X, DL=%X",
+				-- self.Reg.BX, self.Reg.CX >> 8, self.Reg.CX & 0xFF, self.Reg.DX >> 8, self.Reg.DX & 0xFF))
 			else
 				self.Reg.Flags = self.Reg.Flags | 1
 				self.Reg.AX = (self.Reg.AX & 0x00FF) | 0x0100
@@ -1548,24 +1635,32 @@ script CPUCore extends Component
 			self.Reg.Flags = (self.Reg.Flags & 0xFF00) | (ah & 0xD5) | 0x02
 		elseif opcode == 0xA0 then -- MOV AL, moffs8
 			local offset = self:FetchWord()
-			local addr = (self.Reg.DS << 4) + offset
+			local seg = self.segmentOverride or self.Reg.DS
+			local addr = ((seg << 4) + offset) & 0xFFFFF
 			local val = self:ReadByte(addr)
 			self.Reg.AX = (self.Reg.AX & 0xFF00) | val
+			self.segmentOverride = nil
 			
 		elseif opcode == 0xA1 then -- MOV AX, moffs16
 			local offset = self:FetchWord()
-			local addr = (self.Reg.DS << 4) + offset
+			local seg = self.segmentOverride or self.Reg.DS
+			local addr = ((seg << 4) + offset) & 0xFFFFF
 			self.Reg.AX = self:ReadWord(addr)
+			self.segmentOverride = nil
 			
 		elseif opcode == 0xA2 then -- MOV moffs8, AL
 			local offset = self:FetchWord()
-			local addr = (self.Reg.DS << 4) + offset
+			local seg = self.segmentOverride or self.Reg.DS
+			local addr = ((seg << 4) + offset) & 0xFFFFF
 			self:WriteByte(addr, self.Reg.AX & 0xFF)
+			self.segmentOverride = nil
 			
 		elseif opcode == 0xA3 then -- MOV moffs16, AX
 			local offset = self:FetchWord()
-			local addr = (self.Reg.DS << 4) + offset
+			local seg = self.segmentOverride or self.Reg.DS
+			local addr = ((seg << 4) + offset) & 0xFFFFF
 			self:WriteWord(addr, self.Reg.AX)
+			self.segmentOverride = nil
 			
 		elseif opcode == 0xA4 then -- MOVSB
 			local df = (self.Reg.Flags & 0x0400) ~= 0
@@ -2286,7 +2381,11 @@ script CPUCore extends Component
 			elseif group == 6 then -- DIV r/m16
 				local num = (self.Reg.DX << 16) | self.Reg.AX
 				local res = self:_x86_div(num, val, false, true)
-				if res.error then self:ExecuteInterrupt(0x00)return end
+				if res.error then
+					log_error(string.format("DIV/0: DX:AX=%08X / %04X at %04X:%04X", num, val, self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF))
+					self:ExecuteInterrupt(0x00)
+					return
+				end
 				self.Reg.AX = res.quot & 0xFFFF
 				self.Reg.DX = res.rem & 0xFFFF
 			elseif group == 7 then -- IDIV r/m16
@@ -2294,7 +2393,11 @@ script CPUCore extends Component
 				local s_num = (num >= 0x80000000) and (num - 0x100000000) or num
 				local s_val = (val >= 0x8000) and (val - 0x10000) or val
 				local res = self:_x86_div(s_num, s_val, true, true)
-				if res.error then self:ExecuteInterrupt(0x00)return end
+				if res.error then
+					log_error(string.format("IDIV/0: DX:AX=%08X / %04X at %04X:%04X", num, val, self.Reg.CS, (self.Reg.IP - 1) & 0xFFFF))
+					self:ExecuteInterrupt(0x00)
+					return
+				end
 				self.Reg.AX = res.quot & 0xFFFF
 				self.Reg.DX = res.rem & 0xFFFF
 			end
